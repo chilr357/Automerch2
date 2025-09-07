@@ -1,0 +1,28 @@
+{
+  "name": "automerch2",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"node server.js\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "setup": "node scripts/setup.js",
+    "set:printify": "node scripts/set-printify-keys.js",
+    "set:openai": "node scripts/set-openai-key.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.17.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
