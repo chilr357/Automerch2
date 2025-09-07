@@ -17,21 +17,25 @@ const extractBase64 = (dataUrl: string): string => {
 };
 
 export const generatePrintifyMockup = async ({ product, designDataUrl, title, description }: GenerateMockupOptions): Promise<{ productId: string; previewUrl?: string }> => {
-  // 1) Optionally fit image to provider placeholder (e.g. phone cases need full bleed cover)
+  // 1) Optionally fit image to provider placeholder (AOP products need full-bleed cover)
   const maybeFitToPlaceholder = async (dataUrl: string): Promise<string> => {
     try {
-      if (product.type !== 'Phone Case') return dataUrl;
+      const fullBleedTypes = new Set([
+        'Phone Case', 'Tote Bag', 'Blanket', 'Pillow', 'Poster', 'Canvas', 'Sticker', 'Journal'
+      ]);
+      if (!fullBleedTypes.has(product.type as any)) return dataUrl;
       const variants = await printifyService.getVariants(product.blueprint_id, product.print_provider_id);
       const list: any[] = Array.isArray((variants as any)?.variants)
         ? (variants as any).variants
         : (Array.isArray(variants) ? (variants as any) : []);
       const targetVariantId: number = (product as any).default_variant_id || list[0]?.id;
       const variant = list.find((v: any) => v.id === targetVariantId) || list[0];
-      const ph = (variant?.placeholders || []).find((p: any) => p.position === 'front') || variant?.placeholders?.[0];
+      const ph = (variant?.placeholders || []).find((p: any) => p.position === (product.printAreaPosition || 'front')) || variant?.placeholders?.[0];
       const targetW = Math.max(1, ph?.width || 1326);
       const targetH = Math.max(1, ph?.height || 2045);
 
-      const fitted = await fitImageToSize(dataUrl, targetW, targetH, 1.05);
+      // Slight bleed to ensure no white edges on cut/hem
+      const fitted = await fitImageToSize(dataUrl, targetW, targetH, 1.04);
       return fitted || dataUrl;
     } catch {
       return dataUrl;
