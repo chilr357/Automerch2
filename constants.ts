@@ -21,39 +21,119 @@ export const PRODUCTS: Product[] = [
     name: 'Cozy Hoodie',
     type: 'Hoodie',
     price: 49.99,
-    mockupUrl: 'https://i.ibb.co/M6Y71r6/hoodie-mockup.png',
-    blueprint_id: 20,
-    print_provider_id: 1,
-    printAreaPosition: 'front',
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-1908.png',
+    blueprint_id: 1908, // Pigment-Dyed Hoodie (per Merchable mapping)
+    print_provider_id: 410, // Printful
+    // @ts-ignore
+    default_variant_id: 1,
+    printAreaPosition: 'large_center_embroidery',
   },
   {
     id: 3,
     name: 'Coffee Mug',
     type: 'Mug',
     price: 19.99,
-    mockupUrl: 'https://i.ibb.co/hKXt0c8/mug-mockup.png',
-    blueprint_id: 6,
-    print_provider_id: 28,
-    printAreaPosition: 'default',
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-68.png',
+    blueprint_id: 68, // Mug 11oz
+    print_provider_id: 1, // SPOKE Custom Products
+    // @ts-ignore
+    default_variant_id: 33719, // 11oz
+    printAreaPosition: 'front',
   },
   {
     id: 4,
     name: 'Phone Case',
     type: 'Phone Case',
     price: 24.99,
-    mockupUrl: 'https://i.ibb.co/z5pW4b0/phone-case-mockup.png',
-    blueprint_id: 547, // Note: This is for a specific phone model (e.g., iPhone 14)
-    print_provider_id: 57,
-    printAreaPosition: 'default',
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-1273.png',
+    blueprint_id: 1273, // iPhone Cases
+    print_provider_id: 88,
+    // @ts-ignore
+    default_variant_id: 96135,
+    printAreaPosition: 'front',
   },
   {
     id: 5,
     name: 'Tote Bag',
     type: 'Tote Bag',
     price: 22.99,
-    mockupUrl: 'https://i.ibb.co/c1Z8d8V/tote-bag-mockup.png',
-    blueprint_id: 104,
-    print_provider_id: 1,
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-1389.png',
+    blueprint_id: 1389, // Tote Bag (AOP)
+    print_provider_id: 10, // MWW On Demand
+    // @ts-ignore
+    default_variant_id: 103600, // 16" x 16" / Black (sample good default)
+    printAreaPosition: 'front',
+  },
+  {
+    id: 6,
+    name: 'Matte Poster',
+    type: 'Poster',
+    price: 14.99,
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-282.png',
+    blueprint_id: 282, // Matte Vertical Posters
+    print_provider_id: 2, // Sensaria
+    // @ts-ignore
+    default_variant_id: 43135, // 11" x 14" / Matte
+    printAreaPosition: 'front',
+  },
+  {
+    id: 7,
+    name: 'Stretched Canvas',
+    type: 'Canvas',
+    price: 39.99,
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-555.png',
+    blueprint_id: 555, // Stretched Canvas
+    print_provider_id: 69, // Prodigi
+    // @ts-ignore
+    default_variant_id: 1,
+    printAreaPosition: 'front',
+  },
+  {
+    id: 8,
+    name: 'Sherpa Blanket',
+    type: 'Blanket',
+    price: 49.99,
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-238.png',
+    blueprint_id: 238, // Sherpa Fleece Blanket
+    print_provider_id: 10, // MWW On Demand
+    // @ts-ignore
+    default_variant_id: 41656, // 50 x 60
+    printAreaPosition: 'front',
+  },
+  {
+    id: 9,
+    name: 'Square Pillow',
+    type: 'Pillow',
+    price: 24.99,
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-220.png',
+    blueprint_id: 220, // Spun Polyester Square Pillow
+    print_provider_id: 10, // MWW On Demand
+    // @ts-ignore
+    default_variant_id: 41527, // 18 x 18
+    printAreaPosition: 'front',
+  },
+  {
+    id: 10,
+    name: 'Die-Cut Stickers',
+    type: 'Sticker',
+    price: 4.99,
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-600.png',
+    blueprint_id: 600, // Die-Cut Stickers
+    print_provider_id: 73, // Printed Simply
+    // @ts-ignore
+    default_variant_id: 72007, // 3" x 3"
+    printAreaPosition: 'front',
+  },
+  {
+    id: 11,
+    name: 'Hardcover Journal',
+    type: 'Journal',
+    price: 16.99,
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-485.png',
+    blueprint_id: 485, // Hardcover Journal Matte
+    print_provider_id: 28, // District Photo
+    // @ts-ignore
+    default_variant_id: 65223, // Journal
     printAreaPosition: 'front',
   },
 ];

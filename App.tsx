@@ -4,6 +4,7 @@ import { PromptInput } from './components/PromptInput';
 import { ProductSelector } from './components/ProductSelector';
 import { MerchPreview } from './components/MerchPreview';
 import { ActionButtons } from './components/ActionButtons';
+import { PreviousProducts } from './components/PreviousProducts';
 import { Loader } from './components/Loader';
 import { Modal } from './components/Modal';
 import { AIProviderInfo } from './components/AIProviderInfo';
@@ -11,6 +12,7 @@ import { generateImage as generateAIImage, type AIGenerationResult } from './ser
 // import { uploadBase64DataUrl } from './services/imageUploadService';
 import { applyDesignToProduct } from './services/geminiService';
 import { generatePrintifyMockup } from './services/printifyMockupService';
+import { saveProduct } from './services/historyService';
 import type { Product } from './types';
 import { PRODUCTS, ANIME_KEYWORDS } from './constants';
 
@@ -31,6 +33,8 @@ const App: React.FC = () => {
   const [detectedEngine, setDetectedEngine] = useState<EngineType>('Standard');
   const [aiResult, setAiResult] = useState<AIGenerationResult | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
+  const [manualPreviewUrl, setManualPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const promptLower = prompt.toLowerCase();
@@ -45,6 +49,7 @@ const App: React.FC = () => {
     }
 
     setIsLoading(true);
+    setManualPreviewUrl(null);
     setMerchPreviewUrl(null);
     setError(null);
     setLoadingMessage(`Applying design to ${selectedProduct.name}...`);
@@ -52,7 +57,7 @@ const App: React.FC = () => {
     try {
       console.debug('[Apply] Starting apply flow', { product: selectedProduct.name });
       // Use only the Printify flow (create -> update print_areas -> poll for mockup)
-      const { previewUrl } = await generatePrintifyMockup({
+      const { previewUrl, productId } = await generatePrintifyMockup({
         product: selectedProduct,
         designDataUrl: designImage,
         title: `${selectedProduct.name} - ${prompt || 'Custom Design'}`,
@@ -61,6 +66,19 @@ const App: React.FC = () => {
       if (previewUrl) {
         setMerchPreviewUrl(previewUrl);
       }
+      setOverlayUrl(null);
+      // Save to history
+      try {
+        await saveProduct({
+          productId: productId || '',
+          productType: selectedProduct.type,
+          title: `${selectedProduct.name} - ${prompt || 'Custom Design'}`,
+          previewUrl: previewUrl || undefined,
+          designUrl: designImage,
+          blueprint_id: selectedProduct.blueprint_id,
+          print_provider_id: selectedProduct.print_provider_id,
+        });
+      } catch (_) {}
     } catch (err) {
       console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
@@ -81,6 +99,7 @@ const App: React.FC = () => {
     setError(null);
     setDesignImage(null);
     setMerchPreviewUrl(null);
+    setManualPreviewUrl(null);
     setAiResult(null);
     setUploadedImageUrl(null);
     setLoadingMessage('Generating your unique design...');
@@ -109,9 +128,10 @@ const App: React.FC = () => {
   }, [prompt]);
 
   const handleDownload = () => {
-    if (!merchPreviewUrl) return;
+    const src = manualPreviewUrl || merchPreviewUrl || designImage;
+    if (!src) return;
     const link = document.createElement('a');
-    link.href = merchPreviewUrl;
+    link.href = src;
     const productTypeName = selectedProduct.type.toLowerCase().replace(/\s+/g, '-');
     link.download = `automerch-${productTypeName}.png`;
     document.body.appendChild(link);
@@ -126,6 +146,7 @@ const App: React.FC = () => {
       setIsLoading(true);
       setDesignImage(null);
       setMerchPreviewUrl(null);
+      setManualPreviewUrl(null);
       setError(null);
       setPrompt('');
       setAiResult(null);
@@ -253,23 +274,45 @@ const App: React.FC = () => {
                 )}
             </div>
             <div className="flex flex-col gap-8">
+              {manualPreviewUrl && (
+                <div className="flex justify-end -mb-2">
+                  <button
+                    onClick={() => setManualPreviewUrl(null)}
+                    className="text-xs underline opacity-80 hover:opacity-100"
+                  >
+                    Back to generated
+                  </button>
+                </div>
+              )}
               <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl h-full flex items-center justify-center min-h-[400px] lg:min-h-0">
-                {isLoading ? (
-                  <Loader message={loadingMessage} />
-                ) : merchPreviewUrl ? (
-                  <MerchPreview previewUrl={merchPreviewUrl} altText={`${selectedProduct.name} with custom design`} />
-                ) : designImage ? (
-                  <MerchPreview previewUrl={designImage} altText={prompt || "Uploaded custom design"} />
-                ) : (
-                  <div className="text-center text-white/70">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <p className="mt-4 text-lg">Your generated merch will appear here</p>
-                    <p className="text-sm">Enter a prompt and click "Generate" to start</p>
-                  </div>
-                )}
+                {(() => {
+                  if (isLoading) return <Loader message={loadingMessage} />;
+                  const basePreview = manualPreviewUrl || merchPreviewUrl || designImage || null;
+                  const overlayForPreview = null; // disable combining when a previous product is clicked
+                  if (basePreview) {
+                    const alt = merchPreviewUrl
+                      ? `${selectedProduct.name} with custom design`
+                      : (prompt || 'Uploaded custom design');
+                    return (
+                      <MerchPreview
+                        previewUrl={basePreview}
+                        altText={alt}
+                        overlayUrl={overlayForPreview}
+                      />
+                    );
+                  }
+                  return (
+                    <div className="text-center text-white/70">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="mt-4 text-lg">Your generated merch will appear here</p>
+                      <p className="text-sm">Enter a prompt and click "Generate" to start</p>
+                    </div>
+                  );
+                })()}
               </div>
+              <PreviousProducts onSelect={(url) => { setManualPreviewUrl(url); setOverlayUrl(null); }} />
               {merchPreviewUrl && !isLoading && (
                 <ActionButtons 
                   onDownload={handleDownload} 

@@ -2,6 +2,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config({ path: '.env.local' });
 
@@ -79,9 +81,33 @@ app.get('/api/printify/products/:id', async (req, res) => {
 });
 
 // Catalog endpoints (blueprints/providers/variants)
+app.get('/api/printify/catalog/blueprints', async (_req, res) => {
+  try {
+    const r = await fetch(`${BASE}/catalog/blueprints.json`, {
+      headers: authHeaders(),
+    });
+    const text = await r.text();
+    if (!r.ok) return res.status(r.status).send(text);
+    res.type('json').send(text);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
 app.get('/api/printify/catalog/blueprints/:id', async (req, res) => {
   try {
     const r = await fetch(`${BASE}/catalog/blueprints/${req.params.id}.json`, {
+      headers: authHeaders(),
+    });
+    const text = await r.text();
+    if (!r.ok) return res.status(r.status).send(text);
+    res.type('json').send(text);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+app.get('/api/printify/catalog/blueprints/:id/print_providers', async (req, res) => {
+  try {
+    const r = await fetch(`${BASE}/catalog/blueprints/${req.params.id}/print_providers.json`, {
       headers: authHeaders(),
     });
     const text = await r.text();
@@ -185,6 +211,64 @@ app.get('/api/printify/catalog/blueprints/:id/print_providers/:providerId/varian
     const text = await r.text();
     if (!r.ok) return res.status(r.status).send(text);
     res.type('json').send(text);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// --- Simple file-backed history store for previously applied products ---
+const DATA_DIR = path.resolve(process.cwd(), '.tmp');
+const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
+
+function ensureDataDir() {
+  try { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {}
+}
+function readHistory() {
+  try {
+    ensureDataDir();
+    if (!fs.existsSync(HISTORY_FILE)) return [];
+    const raw = fs.readFileSync(HISTORY_FILE, 'utf8');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+function writeHistory(items) {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(items, null, 2));
+  } catch {}
+}
+
+app.get('/api/history/products', (_req, res) => {
+  try {
+    res.json(readHistory());
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post('/api/history/products', async (req, res) => {
+  try {
+    const items = readHistory();
+    const incoming = req.body || {};
+    const now = new Date().toISOString();
+    const id = incoming.id || `${Date.now()}`;
+    const item = { ...incoming, id, created_at: incoming.created_at || now };
+    items.unshift(item);
+    writeHistory(items.slice(0, 500));
+    res.json(item);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.delete('/api/history/products/:id', (req, res) => {
+  try {
+    const items = readHistory();
+    const filtered = items.filter((p) => String(p.id) !== String(req.params.id));
+    writeHistory(filtered);
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

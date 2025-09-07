@@ -2,6 +2,7 @@ import type { Product } from '../types';
 import { printifyService } from './printifyService';
 import { uploadBase64Image } from './imgbbService';
 import { logger } from './logger';
+import { fitImageToSize } from './utils/imageFit';
 
 export interface GenerateMockupOptions {
   product: Product;
@@ -16,11 +17,36 @@ const extractBase64 = (dataUrl: string): string => {
 };
 
 export const generatePrintifyMockup = async ({ product, designDataUrl, title, description }: GenerateMockupOptions): Promise<{ productId: string; previewUrl?: string }> => {
-  // 1) Ensure we have an HTTP image URL (host data URLs on ImgBB first)
-  logger.info('Mockup flow: uploading design to Printify');
-  const imageUrl = designDataUrl.startsWith('data:')
-    ? await uploadBase64Image(designDataUrl, `AI_Design_${Date.now()}.png`)
+  // 1) Optionally fit image to provider placeholder (e.g. phone cases need full bleed cover)
+  const maybeFitToPlaceholder = async (dataUrl: string): Promise<string> => {
+    try {
+      if (product.type !== 'Phone Case') return dataUrl;
+      const variants = await printifyService.getVariants(product.blueprint_id, product.print_provider_id);
+      const list: any[] = Array.isArray((variants as any)?.variants)
+        ? (variants as any).variants
+        : (Array.isArray(variants) ? (variants as any) : []);
+      const targetVariantId: number = (product as any).default_variant_id || list[0]?.id;
+      const variant = list.find((v: any) => v.id === targetVariantId) || list[0];
+      const ph = (variant?.placeholders || []).find((p: any) => p.position === 'front') || variant?.placeholders?.[0];
+      const targetW = Math.max(1, ph?.width || 1326);
+      const targetH = Math.max(1, ph?.height || 2045);
+
+      const fitted = await fitImageToSize(dataUrl, targetW, targetH, 1.05);
+      return fitted || dataUrl;
+    } catch {
+      return dataUrl;
+    }
+  };
+
+  const preparedDataUrl = designDataUrl.startsWith('data:')
+    ? await maybeFitToPlaceholder(designDataUrl)
     : designDataUrl;
+
+  // 1a) Ensure we have an HTTP image URL (host data URLs on ImgBB first)
+  logger.info('Mockup flow: uploading design to Printify');
+  const imageUrl = preparedDataUrl.startsWith('data:')
+    ? await uploadBase64Image(preparedDataUrl, `AI_Design_${Date.now()}.png`)
+    : preparedDataUrl;
 
   // Upload the URL to Printify to obtain an uploadId for creation-time print_areas
   const uploadRes = await printifyService.uploadImageByUrl('design.png', imageUrl);
