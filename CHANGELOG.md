@@ -120,4 +120,14 @@ The app now automatically detects anime-related content in prompts and routes to
 
 **Status**: ✅ All integrations complete and tested
 **Server**: Running on http://localhost:5173
-**Last Updated**: $(date)
+**Last Updated**: 2025-09-07
+
+## v0.1.0
+
+- Printify Etsy flow for all products
+- Added Tote (AOP) with MWW On Demand, blanket and pillow with MWW
+- Posters (Sensaria), Canvas (Prodigi), Stickers (Printed Simply), Journal (District Photo)
+- Phone case auto-fit to provider placeholder
+- Proxy server catalog routes for blueprints/providers/variants
+- Previous Products history with local file store and overlay viewing
+- Colorful SVG icons per category
