@@ -5,6 +5,7 @@ export interface SavedProduct {
   title: string;
   previewUrl?: string;
   designUrl?: string;
+  adfusionMockups?: string[];
   blueprint_id: number;
   print_provider_id: number;
   variant_ids?: number[];

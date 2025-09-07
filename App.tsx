@@ -13,6 +13,7 @@ import { generateImage as generateAIImage, type AIGenerationResult } from './ser
 import { applyDesignToProduct } from './services/geminiService';
 import { generatePrintifyMockup } from './services/printifyMockupService';
 import { saveProduct } from './services/historyService';
+import { generateAdfusionBatch } from './services/adfusionService';
 import type { Product } from './types';
 import { PRODUCTS, ANIME_KEYWORDS } from './constants';
 
@@ -67,14 +68,19 @@ const App: React.FC = () => {
         setMerchPreviewUrl(previewUrl);
       }
       setOverlayUrl(null);
-      // Save to history
+      // Save to history and generate adfusion mockups
       try {
+        let adfusionMockups: string[] = [];
+        if (previewUrl) {
+          try { adfusionMockups = await generateAdfusionBatch(previewUrl); } catch {}
+        }
         await saveProduct({
           productId: productId || '',
           productType: selectedProduct.type,
           title: `${selectedProduct.name} - ${prompt || 'Custom Design'}`,
           previewUrl: previewUrl || undefined,
           designUrl: designImage,
+          adfusionMockups,
           blueprint_id: selectedProduct.blueprint_id,
           print_provider_id: selectedProduct.print_provider_id,
         });

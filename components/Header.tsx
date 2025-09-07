@@ -12,6 +12,10 @@ export const Header: React.FC = () => {
       <p className="mt-2 text-lg sm:text-xl text-white/80">
         Create & Sell Your AI-Powered Designs Instantly
       </p>
+      <div className="mt-3 flex items-center justify-center gap-4 text-sm">
+        <a href="/" className="underline">Home</a>
+        <a href="#/mockups" className="underline">Mockup Page</a>
+      </div>
       <div className="mt-2 text-xs opacity-80 flex items-center justify-center gap-2">
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={verbose} onChange={toggle} /> Verbose logs
