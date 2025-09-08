@@ -138,7 +138,7 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
         variant_ids: variantIds,
         placeholders: [
           {
-            position: product.printAreaPosition,
+            position: positionToUse,
             images: [
               {
                 id: uploadId,
@@ -163,8 +163,6 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
         {
           variant_ids: variantIds,
           placeholders: [
-            {
-              position: positionToUse,
             {
               position: positionToUse,
               images: [
