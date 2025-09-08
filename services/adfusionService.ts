@@ -98,15 +98,15 @@ export async function generateAdfusionBatch(productImageUrl: string, productType
   if ((productType || '').toLowerCase() === 'tote bag') {
     const prompts: string[] = [
       // Fashion look (studio) — model 1
-      `Create an editorial fashion look image. Use the provided product photo (a tote bag) as the exact product, composited realistically as if held over the shoulder by a professional model in a studio lookbook setting. Clean seamless background, high-key softbox lighting, crisp shadows, no text or logos. Model should have dark skin tone to ensure diversity. Preserve the bag's proportions and design; do not alter the print. Output only the final composed image.`,
+      `Create an editorial studio fashion image that CLEARLY includes a human model. Use the provided tote product photo exactly as given and composite it so the model is holding the tote by the handles or wearing it on one shoulder. Full or three-quarter body in frame, head visible. Clean seamless background, softbox lighting, crisp but natural shadows. Ensure realistic hand/bag interaction. Use a model with deep brown skin tone to ensure diverse representation. Do not add text or logos. Do not alter the product art. Output only the composed image.`,
       // Fashion look (studio) — model 2
-      `Create an elegant runway/lookbook studio fashion shot. Place the provided tote product photo naturally in the model's hand. Neutral backdrop, soft rim light, editorial color grading, no text. Model should appear East Asian to increase diversity. Preserve the bag exactly. Output only the final image.`,
+      `Create a lookbook studio fashion shot featuring a human model holding the provided tote. Neutral backdrop, gentle rim light, editorial grading. Show the model from waist-up or full body, face visible. Use a model with East Asian features for diversity. Keep the tote exactly as provided and integrate shadows realistically. No text. Output only the composed image.`,
       // Lifestyle model — city street
-      `Generate a lifestyle scene on a sunny city street. A model casually walking with the provided tote product (composite it realistically), natural daylight and street depth-of-field bokeh. Model should appear Latina/Hispanic. Keep the tote's design unchanged and photorealistic. No text. Output only the final image.`,
+      `Generate a lifestyle scene on a sunny city street that includes a human model walking while carrying the provided tote on the shoulder or in-hand. Natural daylight, depth-of-field street background, realistic motion and shadow. Use a model with a medium tan skin tone (Latina/Hispanic appearance). Keep the tote unchanged. No text. Output only the composed image.`,
       // Lifestyle model — cafe
-      `Generate a cozy cafe lifestyle scene. A model sits by a window with the provided tote placed on the table or hanging on the chair, integrated realistically. Warm ambient light and reflections. Model should appear White/European. Keep the tote unchanged. No text. Output only the final image.`,
+      `Generate a cozy cafe lifestyle scene with a human model seated by a window holding or wearing the provided tote. Warm ambient light, candid feel, reflections on glass. Use a model with light/fair skin tone. Keep the tote unchanged and realistically integrated with hands/strap. No text. Output only the composed image.`,
       // Lifestyle model — park
-      `Generate a relaxed weekend park scene. A model poses with the provided tote on the shoulder, soft afternoon light, greenery in background. Model should appear South Asian/Indian. Keep the tote design intact. No text. Output only the final image.`,
+      `Generate a relaxed weekend park scene with a human model posing with the provided tote on the shoulder. Soft afternoon light, greenery background, casual outfit. Use a model with South Asian features for diversity. Keep the tote design intact and realistically composited. No text. Output only the composed image.`,
     ];
     const out: string[] = [];
     for (const p of prompts) {
