@@ -2,7 +2,7 @@ import type { Product } from '../types';
 import { printifyService } from './printifyService';
 import { uploadBase64Image } from './imgbbService';
 import { logger } from './logger';
-import { fitImageToSize } from './utils/imageFit';
+import { fitImageToSize, coverToExactPixels } from './utils/imageFit';
 
 export interface GenerateMockupOptions {
   product: Product;
@@ -34,8 +34,12 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
       const targetW = Math.max(1, ph?.width || 1326);
       const targetH = Math.max(1, ph?.height || 2045);
 
-      // Slight bleed to ensure no white edges on cut/hem
-      const bleed = (product.type === 'Phone Case' ? 1.12 : (product.blueprint_id === 326 ? 1.12 : 1.04));
+      // For phone cases, match placeholder pixels exactly with overscan to guarantee full coverage
+      if (product.type === 'Phone Case') {
+        const fittedExact = await coverToExactPixels(dataUrl, targetW, targetH, 1.08);
+        return fittedExact || dataUrl;
+      }
+      const bleed = (product.blueprint_id === 326 ? 1.12 : 1.04);
       const fitted = await fitImageToSize(dataUrl, targetW, targetH, bleed);
       return fitted || dataUrl;
     } catch {
@@ -101,7 +105,7 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
       placement.scale = 1.28;
       placement.y = 0.46; // nudge upward to cover upper seam area in mockups
     } else if (product.type === 'Phone Case') {
-      placement.scale = 1.02; // slight overscan to guarantee edge-to-edge
+      placement.scale = 1.0; // image already overscanned in pixel space
       placement.y = 0.5;
     }
   }
