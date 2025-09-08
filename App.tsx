@@ -72,7 +72,7 @@ const App: React.FC = () => {
       try {
         let adfusionMockups: string[] = [];
         if (previewUrl) {
-          try { adfusionMockups = await generateAdfusionBatch(previewUrl); } catch {}
+          try { adfusionMockups = await generateAdfusionBatch(previewUrl, selectedProduct.type); } catch {}
         }
         await saveProduct({
           productId: productId || '',

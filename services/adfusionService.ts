@@ -63,7 +63,59 @@ export async function generateAdfusionMockup(productImageUrl: string, scenario: 
   throw new Error('No image returned for adfusion mockup');
 }
 
-export async function generateAdfusionBatch(productImageUrl: string): Promise<string[]> {
+async function generateFromPrompt(productImageUrl: string, textPrompt: string): Promise<string> {
+  if (!ai) throw new Error('Gemini API key not configured');
+  const res = await fetch(productImageUrl);
+  if (!res.ok) throw new Error('Failed to fetch product image');
+  const blob = await res.blob();
+  const b64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      const [, data] = dataUrl.split(',');
+      resolve(data);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image-preview',
+    contents: { parts: [ { inlineData: { mimeType: blob.type || 'image/png', data: b64 } }, { text: textPrompt } ] },
+    config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
+  });
+  for (const part of response.candidates?.[0]?.content?.parts || []) {
+    if ((part as any).inlineData) {
+      const id = (part as any).inlineData;
+      const mime = id.mimeType || 'image/png';
+      return `data:${mime};base64,${id.data}`;
+    }
+  }
+  throw new Error('No image returned for adfusion mockup');
+}
+
+export async function generateAdfusionBatch(productImageUrl: string, productType?: string): Promise<string[]> {
+  // Special handling for Tote Bag: 2 fashion-look models + 3 lifestyle-models with diverse representation
+  if ((productType || '').toLowerCase() === 'tote bag') {
+    const prompts: string[] = [
+      // Fashion look (studio) — model 1
+      `Create an editorial fashion look image. Use the provided product photo (a tote bag) as the exact product, composited realistically as if held over the shoulder by a professional model in a studio lookbook setting. Clean seamless background, high-key softbox lighting, crisp shadows, no text or logos. Model should have dark skin tone to ensure diversity. Preserve the bag's proportions and design; do not alter the print. Output only the final composed image.`,
+      // Fashion look (studio) — model 2
+      `Create an elegant runway/lookbook studio fashion shot. Place the provided tote product photo naturally in the model's hand. Neutral backdrop, soft rim light, editorial color grading, no text. Model should appear East Asian to increase diversity. Preserve the bag exactly. Output only the final image.`,
+      // Lifestyle model — city street
+      `Generate a lifestyle scene on a sunny city street. A model casually walking with the provided tote product (composite it realistically), natural daylight and street depth-of-field bokeh. Model should appear Latina/Hispanic. Keep the tote's design unchanged and photorealistic. No text. Output only the final image.`,
+      // Lifestyle model — cafe
+      `Generate a cozy cafe lifestyle scene. A model sits by a window with the provided tote placed on the table or hanging on the chair, integrated realistically. Warm ambient light and reflections. Model should appear White/European. Keep the tote unchanged. No text. Output only the final image.`,
+      // Lifestyle model — park
+      `Generate a relaxed weekend park scene. A model poses with the provided tote on the shoulder, soft afternoon light, greenery in background. Model should appear South Asian/Indian. Keep the tote design intact. No text. Output only the final image.`,
+    ];
+    const out: string[] = [];
+    for (const p of prompts) {
+      try { out.push(await generateFromPrompt(productImageUrl, p)); } catch (e) { console.warn('adfusion custom fail', e); }
+    }
+    return out;
+  }
+
+  // Default generic batch when no specific product logic is needed
   const scenarios: Scenario[] = ['fashion_ad', 'modern_chic', 'studio_flatlay', 'outdoor_lifestyle', 'minimal_product_card'];
   const results: string[] = [];
   for (const s of scenarios) {
