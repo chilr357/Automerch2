@@ -35,7 +35,7 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
       const targetH = Math.max(1, ph?.height || 2045);
 
       // Slight bleed to ensure no white edges on cut/hem
-      const bleed = (product.type === 'Phone Case' ? 1.0 : (product.blueprint_id === 326 ? 1.12 : 1.04));
+      const bleed = (product.type === 'Phone Case' ? 1.12 : (product.blueprint_id === 326 ? 1.12 : 1.04));
       const fitted = await fitImageToSize(dataUrl, targetW, targetH, bleed);
       return fitted || dataUrl;
     } catch {
@@ -101,7 +101,7 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
       placement.scale = 1.28;
       placement.y = 0.46; // nudge upward to cover upper seam area in mockups
     } else if (product.type === 'Phone Case') {
-      placement.scale = 1.0; // replicate ai-agent-project placement (centered, no overscan)
+      placement.scale = 1.02; // slight overscan to guarantee edge-to-edge
       placement.y = 0.5;
     }
   }
