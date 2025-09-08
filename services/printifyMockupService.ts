@@ -35,7 +35,8 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
       const targetH = Math.max(1, ph?.height || 2045);
 
       // Slight bleed to ensure no white edges on cut/hem
-      const fitted = await fitImageToSize(dataUrl, targetW, targetH, 1.04);
+      const bleed = (product.blueprint_id === 326 ? 1.12 : 1.04);
+      const fitted = await fitImageToSize(dataUrl, targetW, targetH, bleed);
       return fitted || dataUrl;
     } catch {
       return dataUrl;
@@ -88,6 +89,20 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
   if (!selectedVariantId) selectedVariantId = 1;
   if (variantIds.length === 0) variantIds = [selectedVariantId];
 
+  // Determine placement tuning for full coverage
+  const fullBleedTypes = new Set([
+    'Phone Case', 'Tote Bag', 'Blanket', 'Pillow', 'Poster', 'Canvas', 'Sticker', 'Journal'
+  ]);
+  const basePlacement = { x: 0.5, y: 0.5, scale: 1.0 } as { x: number; y: number; scale: number };
+  const placement = { ...basePlacement };
+  if (fullBleedTypes.has(product.type as any)) {
+    placement.scale = 1.18; // slight overscan to eliminate edges on most AOP
+    if (product.type === 'Tote Bag') {
+      placement.scale = 1.28;
+      placement.y = 0.46; // nudge upward to cover upper seam area in mockups
+    }
+  }
+
   // 3) Create minimal product (no print_areas) like iOS
   const createData: any = {
     title: title || `${product.name} - Custom Design`,
@@ -105,9 +120,9 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
             images: [
               {
                 id: uploadId,
-                x: 0.5,
-                y: 0.5,
-                scale: 1.0,
+                x: placement.x,
+                y: placement.y,
+                scale: placement.scale,
                 angle: 0,
               },
             ],
@@ -131,9 +146,9 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
               images: [
                 {
                   id: uploadId,
-                  x: 0.5,
-                  y: 0.5,
-                  scale: 1.0,
+                  x: placement.x,
+                  y: placement.y,
+                  scale: placement.scale,
                   angle: 0,
                 },
               ],

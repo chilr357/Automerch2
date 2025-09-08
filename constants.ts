@@ -57,11 +57,11 @@ export const PRODUCTS: Product[] = [
     name: 'Tote Bag',
     type: 'Tote Bag',
     price: 22.99,
-    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-1389.png',
-    blueprint_id: 1389, // Tote Bag (AOP)
+    mockupUrl: 'https://images.printify.com/mockup-catalog/blueprint-326.png',
+    blueprint_id: 326, // Weekender Tote (matches Vibrant Rose Tote Bag)
     print_provider_id: 10, // MWW On Demand
     // @ts-ignore
-    default_variant_id: 103600, // 16" x 16" / Black (sample good default)
+    default_variant_id: 44271, // 24" × 13" default
     printAreaPosition: 'front',
   },
   {
