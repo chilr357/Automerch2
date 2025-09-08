@@ -263,6 +263,20 @@ app.post('/api/history/products', async (req, res) => {
   }
 });
 
+app.put('/api/history/products/:id', (req, res) => {
+  try {
+    const items = readHistory();
+    const idx = items.findIndex((p) => String(p.id) === String(req.params.id));
+    if (idx === -1) return res.status(404).json({ error: 'not found' });
+    const updated = { ...items[idx], ...(req.body || {}), id: items[idx].id };
+    items[idx] = updated;
+    writeHistory(items);
+    res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 app.delete('/api/history/products/:id', (req, res) => {
   try {
     const items = readHistory();

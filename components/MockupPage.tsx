@@ -1,10 +1,12 @@
 import React from 'react';
-import { listProducts, type SavedProduct } from '../services/historyService';
+import { listProducts, updateProduct, type SavedProduct } from '../services/historyService';
+import { generateAdfusionBatch } from '../services/adfusionService';
 
 export const MockupPage: React.FC = () => {
   const [items, setItems] = React.useState<SavedProduct[]>([]);
   const [selected, setSelected] = React.useState<SavedProduct | null>(null);
   const [loading, setLoading] = React.useState<boolean>(false);
+  const [genLoading, setGenLoading] = React.useState<boolean>(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -13,6 +15,19 @@ export const MockupPage: React.FC = () => {
   }, [selected]);
 
   React.useEffect(() => { load(); }, [load]);
+
+  const regenerateMockups = async () => {
+    if (!selected) return;
+    setGenLoading(true);
+    try {
+      const mocks = await generateAdfusionBatch(selected.previewUrl || selected.designUrl || '', selected.productType);
+      const updated = await updateProduct(selected.id, { adfusionMockups: mocks });
+      setSelected(updated);
+      setItems((prev) => prev.map(i => i.id === updated.id ? updated : i));
+    } finally {
+      setGenLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-[#667eea] to-[#764ba2] text-white p-6">
@@ -41,6 +56,11 @@ export const MockupPage: React.FC = () => {
             {selected ? (
               <div>
                 <h2 className="font-semibold mb-3">{selected.title}</h2>
+                <div className="mb-4 flex items-center gap-3">
+                  <button onClick={regenerateMockups} disabled={genLoading} className={`px-4 py-2 rounded-lg font-semibold ${genLoading? 'bg-white/20':'bg-green-500 hover:bg-green-600'} text-white`}>
+                    {genLoading ? 'Generating…' : 'Generate mockups'}
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {selected.previewUrl && (
                     <div className="col-span-1 md:col-span-3">

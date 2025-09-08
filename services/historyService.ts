@@ -35,4 +35,14 @@ export async function removeProduct(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete item: ${res.status}`);
 }
 
+export async function updateProduct(id: string, data: Partial<SavedProduct>): Promise<SavedProduct> {
+  const res = await fetch(`${BASE}/history/products/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to update item: ${res.status}`);
+  return res.json();
+}
+
 
