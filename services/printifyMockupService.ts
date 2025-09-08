@@ -36,7 +36,7 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
 
       // For phone cases, match placeholder pixels exactly with overscan to guarantee full coverage
       if (product.type === 'Phone Case') {
-        const fittedExact = await coverToExactPixels(dataUrl, targetW, targetH, 1.35);
+        const fittedExact = await coverToExactPixels(dataUrl, targetW, targetH, 1.5);
         return fittedExact || dataUrl;
       }
       const bleed = (product.blueprint_id === 326 ? 1.12 : 1.04);
