@@ -35,7 +35,7 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
       const targetH = Math.max(1, ph?.height || 2045);
 
       // Slight bleed to ensure no white edges on cut/hem
-      const bleed = (product.blueprint_id === 326 ? 1.12 : 1.04);
+      const bleed = (product.type === 'Phone Case' ? 1.22 : (product.blueprint_id === 326 ? 1.12 : 1.04));
       const fitted = await fitImageToSize(dataUrl, targetW, targetH, bleed);
       return fitted || dataUrl;
     } catch {
@@ -100,8 +100,30 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
     if (product.type === 'Tote Bag') {
       placement.scale = 1.28;
       placement.y = 0.46; // nudge upward to cover upper seam area in mockups
+    } else if (product.type === 'Phone Case') {
+      placement.scale = 1.35; // stronger overscan for rounded corners
+      placement.y = 0.5;
     }
   }
+
+  // Some providers expose different placeholder positions; pick the best available
+  const resolvePosition = async (): Promise<string> => {
+    try {
+      const variants = await printifyService.getVariants(product.blueprint_id, product.print_provider_id);
+      const list: any[] = Array.isArray((variants as any)?.variants)
+        ? (variants as any).variants
+        : (Array.isArray(variants) ? (variants as any) : []);
+      const v = list.find((x: any) => x.id === selectedVariantId) || list[0];
+      const positions = (v?.placeholders || []).map((p: any) => p.position);
+      if (product.type === 'Phone Case' && positions.includes('back')) return 'back';
+      if (positions.includes(product.printAreaPosition)) return product.printAreaPosition as any;
+      if (positions.includes('front')) return 'front';
+      return positions[0] || (product.printAreaPosition as any) || 'front';
+    } catch {
+      return (product.printAreaPosition as any) || 'front';
+    }
+  };
+  const positionToUse = await resolvePosition();
 
   // 3) Create minimal product (no print_areas) like iOS
   const createData: any = {
@@ -142,7 +164,9 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
           variant_ids: variantIds,
           placeholders: [
             {
-              position: product.printAreaPosition,
+              position: positionToUse,
+            {
+              position: positionToUse,
               images: [
                 {
                   id: uploadId,
