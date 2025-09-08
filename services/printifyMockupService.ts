@@ -36,7 +36,7 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
 
       // For phone cases, match placeholder pixels exactly with overscan to guarantee full coverage
       if (product.type === 'Phone Case') {
-        const fittedExact = await coverToExactPixels(dataUrl, targetW, targetH, 1.08);
+        const fittedExact = await coverToExactPixels(dataUrl, targetW, targetH, 1.35);
         return fittedExact || dataUrl;
       }
       const bleed = (product.blueprint_id === 326 ? 1.12 : 1.04);
@@ -105,7 +105,7 @@ export const generatePrintifyMockup = async ({ product, designDataUrl, title, de
       placement.scale = 1.28;
       placement.y = 0.46; // nudge upward to cover upper seam area in mockups
     } else if (product.type === 'Phone Case') {
-      placement.scale = 1.0; // image already overscanned in pixel space
+      placement.scale = 1.2; // enlarge within placeholder to guarantee full-bleed
       placement.y = 0.5;
     }
   }
