@@ -5,9 +5,10 @@
 
 import { generateImageWithOpenAI } from './openaiService';
 import { generateImageWithMidjourney } from './midjourneyService';
+import { isGrokConfigured } from './grokService';
 import { ANIME_KEYWORDS } from '../constants';
 
-export type AIProvider = 'openai' | 'midjourney' | 'gemini';
+export type AIProvider = 'openai' | 'midjourney' | 'grok' | 'gemini';
 export type EngineType = 'Standard' | 'Anime';
 
 export interface AIGenerationOptions {
@@ -49,8 +50,20 @@ export const selectAIProvider = (prompt: string, preferredProvider?: AIProvider)
   if (isAnime) {
     return 'midjourney'; // Use Midjourney Niji for anime
   }
-  
-  return 'openai'; // Use OpenAI DALL-E 3 for general content
+
+  // Respect default provider from env when present
+  let envDefault: AIProvider | undefined;
+  try {
+    const v = (import.meta as any).env?.VITE_DEFAULT_AI_PROVIDER;
+    if (v && typeof v === 'string') envDefault = v as AIProvider;
+  } catch {}
+
+  if (envDefault === 'grok' && isGrokConfigured()) return 'grok';
+  if (envDefault && envDefault !== 'grok') return envDefault;
+
+  // Otherwise, prefer Grok when configured, else OpenAI
+  if (isGrokConfigured()) return 'grok';
+  return 'openai';
 };
 
 /**
@@ -89,6 +102,14 @@ export const generateImage = async (options: AIGenerationOptions): Promise<AIGen
         cost = 0.05; // Approximate cost per image
         break;
 
+      case 'grok':
+        {
+          const { generateImageWithGrok } = await import('./grokService');
+          imageUrl = await generateImageWithGrok({ prompt, size, quality: quality as any, style: style as any });
+          cost = 0.04; // Approximate cost per image
+          break;
+        }
+
       case 'gemini':
         // Fallback to Gemini if other providers fail
         const { generateImage: generateGeminiImage } = await import('./geminiService');
@@ -110,7 +131,24 @@ export const generateImage = async (options: AIGenerationOptions): Promise<AIGen
   } catch (error) {
     console.error(`Error generating image with ${selectedProvider}:`, error);
     
-    // Fallback to Gemini if primary provider fails
+    // Optional fallback to Grok (if configured) then Gemini
+    if (selectedProvider !== 'grok' && isGrokConfigured()) {
+      console.log('Falling back to Grok...');
+      try {
+        const { generateImageWithGrok } = await import('./grokService');
+        const imageUrl = await generateImageWithGrok({ prompt, size, quality: quality as any, style: style as any });
+        return {
+          imageUrl,
+          provider: 'grok',
+          engine,
+          prompt,
+          cost: 0.04,
+        };
+      } catch (grokErr) {
+        console.error('Grok fallback also failed:', grokErr);
+      }
+    }
+
     if (selectedProvider !== 'gemini') {
       console.log('Falling back to Gemini...');
       try {
@@ -147,6 +185,14 @@ export const getAIProviders = () => {
       maxSize: '1792x1024',
     },
     {
+      id: 'grok',
+      name: 'Grok',
+      description: 'Alternative provider (configurable endpoint)',
+      bestFor: ['General designs'],
+      cost: '$0.04 per image (approx.)',
+      maxSize: '1792x1024',
+    },
+    {
       id: 'midjourney',
       name: 'Midjourney Niji',
       description: 'Specialized anime and manga style generation',
@@ -172,6 +218,7 @@ export const estimateCost = (provider: AIProvider, count: number = 1): number =>
   const costs = {
     openai: 0.04,
     midjourney: 0.05,
+    grok: 0.04,
     gemini: 0.02,
   };
   

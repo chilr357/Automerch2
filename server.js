@@ -290,17 +290,49 @@ app.delete('/api/history/products/:id', (req, res) => {
 
 // CORS-friendly image fetcher (for mockup hosts like i.ibb.co)
 // Support both /api/proxy-image and /proxy-image
+const DEFAULT_ALLOWED_PROXY_HOSTS = String(process.env.PROXY_IMAGE_HOSTS || 'i.ibb.co,images.printify.com,i.imgur.com')
+  .split(',')
+  .map(h => h.trim().toLowerCase())
+  .filter(Boolean);
+
 app.get(['/api/proxy-image','/proxy-image'], async (req, res) => {
-  const url = req.query.url;
-  if (!url || typeof url !== 'string') return res.status(400).send('url query required');
+  const raw = req.query.url;
+  if (!raw || typeof raw !== 'string') return res.status(400).send('url query required');
+
+  let target;
   try {
-    const r = await fetch(url);
+    target = new URL(raw);
+  } catch {
+    return res.status(400).send('invalid url');
+  }
+
+  // Enforce https and host allowlist to reduce SSRF risk
+  const allowedHosts = new Set(DEFAULT_ALLOWED_PROXY_HOSTS);
+  if (target.protocol !== 'https:') return res.status(400).send('only https is allowed');
+  if (!allowedHosts.has(target.hostname.toLowerCase())) return res.status(400).send('host not allowed');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const r = await fetch(target, { signal: controller.signal });
     if (!r.ok) return res.status(r.status).send('failed to fetch image');
-    res.setHeader('Content-Type', r.headers.get('content-type') || 'image/png');
+
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.toLowerCase().startsWith('image/')) return res.status(415).send('unsupported content-type');
+
+    const cl = r.headers.get('content-length');
+    if (cl && Number(cl) > 10 * 1024 * 1024) return res.status(413).send('image too large');
+
+    res.setHeader('Content-Type', ct || 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600');
     const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 10 * 1024 * 1024) return res.status(413).send('image too large');
     res.send(buf);
   } catch (e) {
+    if (String(e).includes('The operation was aborted')) return res.status(504).send('timeout fetching image');
     res.status(500).send(String(e));
+  } finally {
+    clearTimeout(timeout);
   }
 });
 
@@ -308,5 +340,4 @@ const port = process.env.PORT || 8787;
 app.listen(port, () => {
   console.log(`API server running on http://localhost:${port}`);
 });
-
 

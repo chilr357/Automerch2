@@ -91,7 +91,14 @@ export interface CreateProductOptions {
 class PrintifyService {
   private apiKey: string;
   private shopId: string;
-  private baseUrl = (import.meta.env.VITE_API_BASE || '').toString().trim() || 'https://api.printify.com/v1';
+  private baseUrl = (() => {
+    try {
+      const v = (import.meta as any).env?.VITE_API_BASE;
+      if (v && String(v).trim()) return String(v).trim().replace(/\/$/, '');
+    } catch {}
+    // Default to local proxy (never hit Printify directly from the client)
+    return '/api';
+  })();
   private etsyShopId: string | undefined = (import.meta.env.VITE_PRINTIFY_ETSY_SHOP_ID || '') as string;
 
   constructor() {
@@ -170,7 +177,9 @@ class PrintifyService {
 
   async getBlueprints(): Promise<PrintifyBlueprint[]> {
     try {
-      const data = await this.makeRequest('/catalog/blueprints.json');
+      const prefix = this.baseUrl.includes('api.printify.com') ? '' : '/printify';
+      const suffix = this.baseUrl.includes('api.printify.com') ? '.json' : '';
+      const data = await this.makeRequest(`${prefix}/catalog/blueprints${suffix}`);
       return data || [];
     } catch (error) {
       console.error('Error fetching blueprints:', error);
@@ -191,7 +200,9 @@ class PrintifyService {
 
   async getPrintProviders(blueprintId: number): Promise<any[]> {
     try {
-      const data = await this.makeRequest(`/catalog/blueprints/${blueprintId}/print_providers.json`);
+      const prefix = this.baseUrl.includes('api.printify.com') ? '' : '/printify';
+      const suffix = this.baseUrl.includes('api.printify.com') ? '.json' : '';
+      const data = await this.makeRequest(`${prefix}/catalog/blueprints/${blueprintId}/print_providers${suffix}`);
       return data || [];
     } catch (error) {
       console.error('Error fetching print providers:', error);
@@ -295,8 +306,22 @@ class PrintifyService {
   async publishProduct(productId: string): Promise<any> {
     try {
       const prefix = this.baseUrl.includes('api.printify.com') ? `/shops/${this.shopId}` : (this.etsyShopId ? '/printify/etsy' : '/printify');
-      const path = this.baseUrl.includes('api.printify.com') ? `${prefix}/products/${productId}/publishing_succeeded.json` : `${prefix}/products/${productId}/publish`;
-      const data = await this.makeRequest(path, { method: 'POST' });
+      const path = this.baseUrl.includes('api.printify.com')
+        ? `${prefix}/products/${productId}/publish.json`
+        : `${prefix}/products/${productId}/publish`;
+      const data = await this.makeRequest(path, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: true,
+          description: true,
+          images: true,
+          variants: true,
+          tags: true,
+          keyFeatures: true,
+          shipping_template: true,
+          retail_prices: true,
+        }),
+      });
       return data;
     } catch (error) {
       console.error('Error publishing product:', error);

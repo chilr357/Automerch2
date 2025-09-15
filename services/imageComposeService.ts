@@ -13,8 +13,8 @@ export interface ComposeOptions {
 
 const proxied = (url: string): string => {
   try {
-    const base = (import.meta.env.VITE_API_BASE || '').toString().replace(/\/$/, '');
-    if (!base) return url;
+    const envBase = (import.meta as any).env?.VITE_API_BASE;
+    const base = (envBase && String(envBase).trim()) ? String(envBase).trim().replace(/\/$/, '') : '/api';
     const encoded = encodeURIComponent(url);
     const apiRoot = base.endsWith('/api') ? base : `${base}/api`;
     return `${apiRoot}/proxy-image?url=${encoded}`;
@@ -83,5 +83,4 @@ export const composeDesignOnMockup = async ({ mockupUrl, designDataUrl, product 
 
   return canvas.toDataURL('image/png');
 };
-
 

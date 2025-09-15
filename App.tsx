@@ -12,8 +12,9 @@ import { generateImage as generateAIImage, type AIGenerationResult } from './ser
 // import { uploadBase64DataUrl } from './services/imageUploadService';
 import { applyDesignToProduct } from './services/geminiService';
 import { generatePrintifyMockup } from './services/printifyMockupService';
-import { saveProduct } from './services/historyService';
+import { saveProduct, updateProduct as updateHistoryProduct } from './services/historyService';
 import { generateAdfusionBatch } from './services/adfusionService';
+import { generateVideosFromStills } from './services/videoAdService';
 import type { Product } from './types';
 import { PRODUCTS, ANIME_KEYWORDS } from './constants';
 
@@ -74,7 +75,7 @@ const App: React.FC = () => {
         if (previewUrl) {
           try { adfusionMockups = await generateAdfusionBatch(previewUrl, selectedProduct.type); } catch {}
         }
-        await saveProduct({
+        const saved = await saveProduct({
           productId: productId || '',
           productType: selectedProduct.type,
           title: `${selectedProduct.name} - ${prompt || 'Custom Design'}`,
@@ -84,6 +85,28 @@ const App: React.FC = () => {
           blueprint_id: selectedProduct.blueprint_id,
           print_provider_id: selectedProduct.print_provider_id,
         });
+        // Asynchronously add fashion/chic video ads as items 6 & 7 (based on Gemini stills)
+        if (previewUrl && saved?.id) {
+          (async () => {
+            try {
+              const enableVideos = (() => {
+                try {
+                  const v = (import.meta as any).env?.VITE_ENABLE_VIDEO_ADS;
+                  return v === '1' || String(v).toLowerCase() === 'true';
+                } catch { return false; }
+              })();
+              if (enableVideos) {
+                // Guaranteed order: [0] fashion_video_ad, [1] chic_video_ad
+                const fashionStill = adfusionMockups?.[0];
+                const chicStill = adfusionMockups?.[1];
+                const videos = await generateVideosFromStills(fashionStill, chicStill);
+                if (videos.length) {
+                  await updateHistoryProduct(saved.id, { adfusionMockups: [...(adfusionMockups || []), ...videos] });
+                }
+              }
+            } catch {}
+          })();
+        }
       } catch (_) {}
     } catch (err) {
       console.error(err);
@@ -113,7 +136,10 @@ const App: React.FC = () => {
     try {
       // Try the new AI service first, fallback to Gemini if needed
       try {
-        const result = await generateAIImage({ prompt, provider: 'openai' });
+        const envDefault = (import.meta as any).env?.VITE_DEFAULT_AI_PROVIDER as any;
+        const hasGrok = Boolean((import.meta as any).env?.VITE_GROK_API_KEY);
+        const provider = envDefault || (hasGrok ? 'grok' : 'openai');
+        const result = await generateAIImage({ prompt, provider, size: '1024x1024', quality: 'hd', style: 'vivid' });
         setAiResult(result);
         setDesignImage(result.imageUrl);
         setLoadingMessage('');

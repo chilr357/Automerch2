@@ -31,8 +31,8 @@ export const generateImageWithMidjourney = async (options: MidjourneyGenerateOpt
   try {
     // Enhanced prompt for anime/manga style
     const enhancedPrompt = model === 'niji' 
-      ? `High-quality anime art, manga style, vibrant colors, for merchandise (t-shirt, mug). The design should be centered with a transparent or simple background. Subject: ${prompt} --niji 6 --style raw --ar ${aspect_ratio}`
-      : `High-quality digital art for merchandise (t-shirt, mug). The design should be centered with a transparent or simple background. Subject: ${prompt} --ar ${aspect_ratio}`;
+      ? `High-quality anime art in manga style. Create a standalone artwork (not a product). Subject: ${prompt}. Include a simple, tasteful background (no transparency/checkerboard), fill canvas. No apparel/shirts/mugs or text. --niji 6 --style raw --ar ${aspect_ratio}`
+      : `High-quality digital artwork. Create a standalone piece (not a product). Subject: ${prompt}. Include a tasteful background filling the canvas; no transparency/checkerboard; no apparel/shirts/mugs or text. --ar ${aspect_ratio}`;
 
     // Submit generation request
     const submitResponse = await fetch('https://api.midjourney.com/v1/imagine', {

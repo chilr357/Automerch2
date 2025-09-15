@@ -35,7 +35,13 @@ export const generateImageWithOpenAI = async (options: OpenAIGenerateOptions): P
       },
       body: JSON.stringify({
         model: 'dall-e-3',
-        prompt: `A high-resolution, professionally designed graphic for merchandise (t-shirt, mug). The design should be centered with a transparent or simple background. Subject: ${prompt}`,
+        prompt: `Create a standalone artwork (not a product mockup). Subject: ${prompt}.
+Background:
+- Include a tasteful background (soft gradient/abstract/atmospheric) that fills the canvas edge‑to‑edge.
+- Do NOT use checkerboard or transparency patterns; avoid plain white/gray.
+Rules:
+- Output only the artwork (no apparel, shirts, mugs, packaging, or human models).
+- No text or watermarks.`,
         n: 1,
         size,
         quality,

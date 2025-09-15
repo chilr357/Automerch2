@@ -208,7 +208,11 @@ const pollForMockup = async (productId: string, maxAttempts: number = 60, create
           if (firstImage?.src) return firstImage.src;
           // If not found directly, list products and try to match by title or id prefix
           try {
-            const listReq = await fetch(`${(import.meta as any).env.VITE_API_BASE}/printify/etsy/products`);
+            const base = (() => {
+              try { const b = (import.meta as any).env?.VITE_API_BASE; if (b && String(b).trim()) return String(b).trim().replace(/\/$/, ''); } catch {}
+              return '/api';
+            })();
+            const listReq = await fetch(`${base}/printify/etsy/products`);
             const list = await listReq.json().catch(() => []);
             const match = Array.isArray(list)
               ? list.find((p: any) => p.id === productId || (createdTitle && typeof p.title === 'string' && p.title.includes(createdTitle)))
@@ -230,5 +234,4 @@ const pollForMockup = async (productId: string, maxAttempts: number = 60, create
   }
   return undefined;
 };
-
 

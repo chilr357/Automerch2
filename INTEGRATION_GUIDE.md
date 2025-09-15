@@ -71,6 +71,13 @@ If you prefer to set up manually, create a `.env.local` file in the root directo
 VITE_OPENAI_API_KEY=your_openai_api_key_here
 VITE_GROK_API_KEY=your_grok_api_key_here
 VITE_MIDJOURNEY_API_KEY=your_midjourney_api_key_here
+VITE_DEFAULT_AI_PROVIDER=openai # options: openai|grok|midjourney|gemini
+
+# Optional Grok configuration (if the default doesn’t work for your account)
+# VITE_GROK_API_BASE=https://api.x.ai/v1
+# VITE_GROK_IMAGE_PATH=/images
+# VITE_GROK_OPENAI_COMPAT=1
+# VITE_GROK_IMAGE_MODEL=grok-image-latest
 
 # Image Storage
 VITE_IMGBB_API_KEY=your_imgbb_api_key_here

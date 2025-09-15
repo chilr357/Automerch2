@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * Automerch2 Setup Script
+ * Automerch2 Setup Script (ESM-compatible)
  * Interactive setup for API keys and configuration
  */
 
-const fs = require('fs');
-const path = require('path');
-const readline = require('readline');
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
 
 const rl = readline.createInterface({
   input: process.stdin,
-  output: process.stdout
+  output: process.stdout,
 });
 
 const question = (query) => new Promise((resolve) => rl.question(query, resolve));
@@ -47,9 +47,9 @@ async function main() {
 
   // Check if .env.local already exists
   if (fs.existsSync(envPath)) {
-    const existingContent = fs.readFileSync(envPath, 'utf8');
+    fs.readFileSync(envPath, 'utf8');
     console.log('📁 Found existing .env.local file');
-    
+
     const overwrite = await question('Do you want to overwrite it? (y/N): ');
     if (overwrite.toLowerCase() !== 'y' && overwrite.toLowerCase() !== 'yes') {
       console.log('Setup cancelled.');
@@ -63,14 +63,14 @@ async function main() {
   for (const [description, key] of Object.entries(API_KEYS)) {
     const isRequired = REQUIRED_KEYS.includes(key);
     const requiredText = isRequired ? ' (REQUIRED)' : ' (Optional)';
-    
+
     let value = await question(`${description}${requiredText}: `);
-    
+
     if (!value && isRequired) {
       console.log(`⚠️  ${description} is required! Please enter a value.`);
       value = await question(`${description} (REQUIRED): `);
     }
-    
+
     if (value) {
       envContent += `${key}=${value}\n`;
     }
@@ -86,16 +86,17 @@ async function main() {
   envContent += '\n# Default configuration\n';
   envContent += 'VITE_NEXTAUTH_URL=http://localhost:3000\n';
   envContent += 'VITE_PRINTIFY_ETSY_SHOP_ID=16894095\n';
+  envContent += 'VITE_API_BASE=http://localhost:8787/api\n';
 
   // Write the file
   fs.writeFileSync(envPath, envContent);
-  
+
   console.log('\n✅ Configuration saved to .env.local');
   console.log('\n📋 Next steps:');
   console.log('1. Run "npm run dev" to start the development server');
   console.log('2. Open http://localhost:5173 in your browser');
   console.log('3. Test your integrations by generating an image');
-  
+
   console.log('\n🔗 API Key Sources:');
   console.log('• OpenAI: https://platform.openai.com/api-keys');
   console.log('• Midjourney: https://www.midjourney.com/api/');
@@ -103,8 +104,11 @@ async function main() {
   console.log('• Printify: https://printify.com/app/account/api-keys');
   console.log('• Stripe: https://dashboard.stripe.com/apikeys');
   console.log('• Supabase: https://supabase.com/dashboard');
-  
+
   rl.close();
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error(err);
+  try { rl.close(); } catch {}
+});
