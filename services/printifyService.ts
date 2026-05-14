@@ -4,6 +4,16 @@ import { logger } from './logger';
  * Print-on-demand product creation and fulfillment
  */
 
+interface CacheRecord<T> {
+  value?: T;
+  promise?: Promise<T>;
+  expiresAt: number;
+}
+
+const CACHE_TTL_MS = 1000 * 60 * 5; // 5 minutes caching for catalog responses
+const MAX_RETRY_ATTEMPTS = 3;
+const MIN_RETRY_DELAY_MS = 750;
+
 export interface PrintifyBlueprint {
   id: number;
   title: string;
@@ -100,6 +110,9 @@ class PrintifyService {
     return '/api';
   })();
   private etsyShopId: string | undefined = (import.meta.env.VITE_PRINTIFY_ETSY_SHOP_ID || '') as string;
+  private blueprintListCache: CacheRecord<PrintifyBlueprint[]> | null = null;
+  private blueprintCache = new Map<number, CacheRecord<PrintifyBlueprint>>();
+  private variantsCache = new Map<string, CacheRecord<any[]>>();
 
   constructor() {
     this.apiKey = import.meta.env.VITE_PRINTIFY_API_KEY;
@@ -108,33 +121,88 @@ class PrintifyService {
     // When using proxy, keys live on server. Allow client to run without exposing keys.
   }
 
+  private getCachedPromise<T>(record: CacheRecord<T> | undefined | null): Promise<T> | null {
+    if (!record) return null;
+    const now = Date.now();
+    if (record.value && record.expiresAt > now) {
+      return Promise.resolve(record.value);
+    }
+    if (record.promise && record.expiresAt > now) {
+      return record.promise;
+    }
+    return null;
+  }
+
   private async makeRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
     const url = `${this.baseUrl}${endpoint}`;
-    logger.debug('Printify request', { url, method: options.method || 'GET' });
-    const response = await fetch(url, {
-      ...options,
-      headers: this.baseUrl.includes('api.printify.com')
-        ? {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-            ...options.headers,
-          }
-        : {
-            'Content-Type': 'application/json',
-            ...options.headers,
-          },
-    });
+    const baseHeaders = this.baseUrl.includes('api.printify.com')
+      ? { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' }
+      : { 'Content-Type': 'application/json' };
+    const customHeaders = options.headers instanceof Headers
+      ? Object.fromEntries(options.headers.entries())
+      : { ...(options.headers as Record<string, string> | undefined) };
+    const requestBody = options.body;
+    const method = options.method || 'GET';
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      logger.error('Printify error', { status: response.status, body: text });
-      let message = 'Unknown error';
-      try { message = JSON.parse(text).message; } catch {}
-      throw new Error(`Printify API error: ${response.status} - ${message}`);
+    let lastStatus = 0;
+    let lastErrorText = '';
+
+    for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
+      logger.debug('Printify request', { url, method, attempt: attempt + 1 });
+      const headers = { ...baseHeaders, ...customHeaders } as Record<string, string>;
+      if (requestBody instanceof FormData) {
+        delete headers['Content-Type'];
+      }
+
+      const response = await fetch(url, {
+        ...options,
+        method,
+        body: requestBody,
+        headers,
+      });
+
+      if (response.ok) {
+        if (response.status === 204) {
+          logger.debug('Printify response', { url, status: response.status, ok: true });
+          return {};
+        }
+        const json = await response.json().catch(() => ({}));
+        logger.debug('Printify response', { url, status: response.status, ok: true });
+        return json;
+      }
+
+      lastStatus = response.status;
+      lastErrorText = await response.text().catch(() => '');
+      logger.warn('Printify error', { url, status: response.status, body: lastErrorText, attempt: attempt + 1 });
+
+      if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRY_ATTEMPTS - 1) {
+        const retryHeader = response.headers.get('retry-after');
+        const retryDelay = retryHeader ? Number(retryHeader) * 1000 : MIN_RETRY_DELAY_MS * (attempt + 1);
+        const delay = Number.isFinite(retryDelay) && retryDelay > 0 ? retryDelay : MIN_RETRY_DELAY_MS;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      break;
     }
-    const json = await response.json().catch(() => ({}));
-    logger.debug('Printify response', { url, ok: true });
-    return json;
+
+    let message = 'Unknown error';
+    let detail = '';
+    try {
+      const parsed = JSON.parse(lastErrorText || '{}');
+      const errorNode = parsed?.error || parsed;
+      message = errorNode?.message || parsed?.message || message;
+      if (errorNode?.errors) {
+        detail = Object.entries(errorNode.errors)
+          .flatMap(([field, value]) => {
+            const values = Array.isArray(value) ? value : [value];
+            return values.map((v) => `${field}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+          })
+          .join('; ');
+      }
+    } catch {}
+    const suffix = detail ? ` (${detail})` : '';
+    throw new Error(`Printify API error: ${lastStatus} - ${message}${suffix}`);
   }
 
   async uploadImageFromBase64(fileName: string, base64Contents: string): Promise<{ id: string }> {
@@ -176,26 +244,48 @@ class PrintifyService {
   }
 
   async getBlueprints(): Promise<PrintifyBlueprint[]> {
-    try {
-      const prefix = this.baseUrl.includes('api.printify.com') ? '' : '/printify';
-      const suffix = this.baseUrl.includes('api.printify.com') ? '.json' : '';
-      const data = await this.makeRequest(`${prefix}/catalog/blueprints${suffix}`);
-      return data || [];
-    } catch (error) {
-      console.error('Error fetching blueprints:', error);
-      throw new Error(`Failed to fetch blueprints: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    const cached = this.getCachedPromise(this.blueprintListCache);
+    if (cached) return cached;
+
+    const now = Date.now();
+    const promise = (async () => {
+      try {
+        const prefix = this.baseUrl.includes('api.printify.com') ? '' : '/printify';
+        const suffix = this.baseUrl.includes('api.printify.com') ? '.json' : '';
+        const data = await this.makeRequest(`${prefix}/catalog/blueprints${suffix}`);
+        const value = data || [];
+        this.blueprintListCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+        return value;
+      } catch (error) {
+        this.blueprintListCache = null;
+        console.error('Error fetching blueprints:', error);
+        throw new Error(`Failed to fetch blueprints: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    })();
+
+    this.blueprintListCache = { promise, expiresAt: now + CACHE_TTL_MS };
+    return promise;
   }
 
   async getBlueprint(blueprintId: number): Promise<PrintifyBlueprint> {
-    try {
-      const prefix = this.baseUrl.includes('api.printify.com') ? '' : '/printify';
-      const data = await this.makeRequest(`${prefix}/catalog/blueprints/${blueprintId}`);
-      return data;
-    } catch (error) {
-      console.error('Error fetching blueprint:', error);
-      throw new Error(`Failed to fetch blueprint: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    const cached = this.getCachedPromise(this.blueprintCache.get(blueprintId));
+    if (cached) return cached;
+
+    const promise = (async () => {
+      try {
+        const prefix = this.baseUrl.includes('api.printify.com') ? '' : '/printify';
+        const data = await this.makeRequest(`${prefix}/catalog/blueprints/${blueprintId}`);
+        this.blueprintCache.set(blueprintId, { value: data, expiresAt: Date.now() + CACHE_TTL_MS });
+        return data;
+      } catch (error) {
+        this.blueprintCache.delete(blueprintId);
+        console.error('Error fetching blueprint:', error);
+        throw new Error(`Failed to fetch blueprint: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    })();
+
+    this.blueprintCache.set(blueprintId, { promise, expiresAt: Date.now() + CACHE_TTL_MS });
+    return promise;
   }
 
   async getPrintProviders(blueprintId: number): Promise<any[]> {
@@ -211,14 +301,26 @@ class PrintifyService {
   }
 
   async getVariants(blueprintId: number, providerId: number): Promise<any[]> {
-    try {
-      const prefix = this.baseUrl.includes('api.printify.com') ? '' : '/printify';
-      const data = await this.makeRequest(`${prefix}/catalog/blueprints/${blueprintId}/print_providers/${providerId}/variants`);
-      return data || [];
-    } catch (error) {
-      console.error('Error fetching variants:', error);
-      throw new Error(`Failed to fetch variants: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    const cacheKey = `${blueprintId}:${providerId}`;
+    const cached = this.getCachedPromise(this.variantsCache.get(cacheKey));
+    if (cached) return cached;
+
+    const promise = (async () => {
+      try {
+        const prefix = this.baseUrl.includes('api.printify.com') ? '' : '/printify';
+        const data = await this.makeRequest(`${prefix}/catalog/blueprints/${blueprintId}/print_providers/${providerId}/variants`);
+        const value = data || [];
+        this.variantsCache.set(cacheKey, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+        return value;
+      } catch (error) {
+        this.variantsCache.delete(cacheKey);
+        console.error('Error fetching variants:', error);
+        throw new Error(`Failed to fetch variants: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    })();
+
+    this.variantsCache.set(cacheKey, { promise, expiresAt: Date.now() + CACHE_TTL_MS });
+    return promise;
   }
 
   async getProducts(): Promise<PrintifyProduct[]> {

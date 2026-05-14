@@ -2,11 +2,10 @@
  * Client-side video ad generator
  *
  * Two usage modes:
- * 1) Animate existing stills generated via Gemini (preferred):
- *    - use generateVideosFromStills(fashionStillUrl, chicStillUrl)
- * 2) (Fallback) Compose from product image directly (kept for legacy):
- *    - use generateFashionVideoAd / generateChicVideoAd with productImageUrl
+ * 1) Prefer Cloud Run proxy when configured (keeps keys off client)
+ * 2) Otherwise animate stills locally (canvas-based fallbacks)
  */
+import { isMediaProxyConfigured, generateProxyVideo } from './mediaProxyService';
 
 const proxied = (url: string): string => {
   try {
@@ -29,6 +28,13 @@ const loadImage = (src: string): Promise<HTMLImageElement> => {
     img.src = src.startsWith('data:') ? src : proxied(src);
   });
 };
+
+async function fetchAsDataUrl(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+  const blob = await response.blob();
+  return blobToDataUrl(blob);
+}
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -188,13 +194,87 @@ export async function generateChicVideoAd(productImageUrl: string): Promise<stri
   return recordCanvasToWebM(canvas, drawFrame, 5000, 30);
 }
 
+const isVideoAsset = (value?: string | null): boolean => {
+  if (!value) return false;
+  if (/^data:video\//i.test(value)) return true;
+  return /\.(mp4|webm)(\?.*)?$/i.test(value);
+};
+
 export async function generateVideosFromStills(fashionStillUrl?: string, chicStillUrl?: string): Promise<string[]> {
   const out: string[] = [];
+  // Route via media proxy if configured
+  if (isMediaProxyConfigured()) {
+    try {
+      if (fashionStillUrl) {
+        const imageDataUri = fashionStillUrl.startsWith('data:') ? fashionStillUrl : await fetchAsDataUrl(fashionStillUrl);
+        const v1 = await generateProxyVideo({
+          prompt: 'Create a high-production 5-second fashion/lifestyle commercial from this still. Cinematic lighting, smooth camera motion, no text.',
+          imageDataUri,
+          duration: 5,
+        });
+        if (v1) out.push(v1);
+      }
+      if (chicStillUrl) {
+        const imageDataUri2 = chicStillUrl.startsWith('data:') ? chicStillUrl : await fetchAsDataUrl(chicStillUrl);
+        const v2 = await generateProxyVideo({
+          prompt: 'Create a chic lifestyle 5-second product commercial from this still. Natural light, minimal composition, no text.',
+          imageDataUri: imageDataUri2,
+          duration: 5,
+        });
+        if (v2) out.push(v2);
+      }
+      if (out.length) return out;
+    } catch (e) {
+      console.warn('Media proxy video generation failed, using local fallbacks', e);
+    }
+  }
   try {
-    if (fashionStillUrl) out.push(await generateFashionVideoAd(fashionStillUrl));
+    if (fashionStillUrl) {
+      if (isVideoAsset(fashionStillUrl)) {
+        out.push(fashionStillUrl);
+      } else {
+        out.push(await generateFashionVideoAd(fashionStillUrl));
+      }
+    }
   } catch (e) { console.warn('fashion video render fail', e); }
   try {
-    if (chicStillUrl) out.push(await generateChicVideoAd(chicStillUrl));
+    if (chicStillUrl) {
+      if (isVideoAsset(chicStillUrl)) {
+        out.push(chicStillUrl);
+      } else {
+        out.push(await generateChicVideoAd(chicStillUrl));
+      }
+    }
   } catch (e) { console.warn('chic video render fail', e); }
   return out;
+}
+
+export async function generatePhoneCommercial(productImageUrl: string): Promise<string> {
+  // Prefer proxy path if available
+  if (isMediaProxyConfigured()) {
+    try {
+      const imageDataUri = productImageUrl.startsWith('data:') ? productImageUrl : await fetchAsDataUrl(productImageUrl);
+      return await generateProxyVideo({
+        prompt: 'Create a 5-second premium smartphone commercial from this still. Precision macro details, elegant movements, no text.',
+        imageDataUri,
+        duration: 5,
+      });
+    } catch (error) {
+      console.warn('Media proxy phone commercial failed, falling back', error);
+    }
+  }
+  try {
+    const [primary] = await generateVideosFromStills(productImageUrl);
+    if (primary) return primary;
+  } catch (error) {
+    console.warn('Phone commercial still animation failed, falling back', error);
+  }
+
+  try {
+    return await generateChicVideoAd(productImageUrl);
+  } catch (error) {
+    console.warn('Chic fallback for phone commercial failed, using fashion style', error);
+  }
+
+  return generateFashionVideoAd(productImageUrl);
 }

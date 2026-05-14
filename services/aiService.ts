@@ -8,7 +8,7 @@ import { generateImageWithMidjourney } from './midjourneyService';
 import { isGrokConfigured } from './grokService';
 import { ANIME_KEYWORDS } from '../constants';
 
-export type AIProvider = 'openai' | 'midjourney' | 'grok' | 'gemini';
+export type AIProvider = 'openai' | 'midjourney' | 'grok' | 'gemini' | 'perplexity';
 export type EngineType = 'Standard' | 'Anime';
 
 export interface AIGenerationOptions {
@@ -25,6 +25,7 @@ export interface AIGenerationResult {
   engine: EngineType;
   prompt: string;
   cost?: number;
+  data?: string;
 }
 
 /**
@@ -117,6 +118,19 @@ export const generateImage = async (options: AIGenerationOptions): Promise<AIGen
         cost = 0.02; // Approximate cost per image
         break;
 
+      case 'perplexity':
+        {
+          const { fetchAnimeSceneDataset } = await import('./perplexityService');
+          const scenes = await fetchAnimeSceneDataset();
+          return {
+            imageUrl: '',
+            provider: 'perplexity',
+            engine,
+            prompt,
+            data: JSON.stringify(scenes, null, 2),
+          };
+        }
+
       default:
         throw new Error(`Unsupported AI provider: ${selectedProvider}`);
     }
@@ -130,7 +144,12 @@ export const generateImage = async (options: AIGenerationOptions): Promise<AIGen
     };
   } catch (error) {
     console.error(`Error generating image with ${selectedProvider}:`, error);
-    
+
+    // When Perplexity is requested we do not fallback to other providers.
+    if (selectedProvider === 'perplexity') {
+      throw error instanceof Error ? error : new Error('Perplexity generation failed');
+    }
+
     // Optional fallback to Grok (if configured) then Gemini
     if (selectedProvider !== 'grok' && isGrokConfigured()) {
       console.log('Falling back to Grok...');
@@ -199,6 +218,14 @@ export const getAIProviders = () => {
       bestFor: ['Anime characters', 'Manga style', 'Japanese art'],
       cost: '$0.05 per image',
       maxSize: '1024x1024',
+    },
+    {
+      id: 'perplexity',
+      name: 'Perplexity Research',
+      description: 'Fetches real anime scene references with timestamps and screenshots',
+      bestFor: ['Reference gathering', 'Scene analysis'],
+      cost: 'API usage (varies)',
+      maxSize: 'N/A',
     },
     {
       id: 'gemini',

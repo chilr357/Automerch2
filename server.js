@@ -4,6 +4,9 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { captureFrame } from './services/frameCapture.js';
+import { generateVeoVideo } from './services/veoServer.js';
+import { searchImage } from './services/bingImageSearch.js';
 
 dotenv.config({ path: '.env.local' });
 
@@ -263,6 +266,43 @@ app.post('/api/history/products', async (req, res) => {
   }
 });
 
+app.post('/api/capture-frame', async (req, res) => {
+  try {
+    const { videoUrl, timestamp } = req.body || {};
+    if (!videoUrl || !timestamp) {
+      return res.status(400).json({ error: 'videoUrl and timestamp are required' });
+    }
+    const dataUrl = await captureFrame(String(videoUrl), String(timestamp));
+    res.json({ dataUrl });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post('/api/image-search', async (req, res) => {
+  try {
+    const { query } = req.body || {};
+    if (!query || !String(query).trim()) {
+      return res.status(400).json({ error: 'query is required' });
+    }
+    const results = await searchImage(String(query));
+    res.json({ results });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post('/api/veo/generate', async (req, res) => {
+  try {
+    const { theme, stillUrl } = req.body || {};
+    if (!theme) return res.status(400).json({ error: 'theme required' });
+    const video = await generateVeoVideo(String(theme), stillUrl ? String(stillUrl) : undefined);
+    res.json({ video });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.put('/api/history/products/:id', (req, res) => {
   try {
     const items = readHistory();
@@ -340,4 +380,3 @@ const port = process.env.PORT || 8787;
 app.listen(port, () => {
   console.log(`API server running on http://localhost:${port}`);
 });
-

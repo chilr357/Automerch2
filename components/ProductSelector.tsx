@@ -53,7 +53,7 @@ const ColorByType: Record<Product['type'], { bg: string; text: string }> = {
 export const ProductSelector: React.FC<ProductSelectorProps> = ({ products, selectedProduct, onSelectProduct, onApply, applyDisabled }) => {
   return (
     <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-2xl">
-      <h2 className="text-lg font-semibold mb-4">2. Choose Your Merch 🛍️</h2>
+      <h2 className="text-lg font-semibold mb-4">3. Choose Your Merch 🛍️</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
         {products.map((product) => (
           <button

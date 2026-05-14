@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { PromptInput } from './components/PromptInput';
 import { ProductSelector } from './components/ProductSelector';
@@ -7,16 +7,20 @@ import { ActionButtons } from './components/ActionButtons';
 import { PreviousProducts } from './components/PreviousProducts';
 import { Loader } from './components/Loader';
 import { Modal } from './components/Modal';
-import { AIProviderInfo } from './components/AIProviderInfo';
-import { generateImage as generateAIImage, type AIGenerationResult } from './services/aiService';
+import { AIProviderSelector, type ProviderOption } from './components/AIProviderSelector';
+import { generateImage as generateAIImage, type AIGenerationResult, type AIProvider } from './services/aiService';
 // import { uploadBase64DataUrl } from './services/imageUploadService';
 import { applyDesignToProduct } from './services/geminiService';
 import { generatePrintifyMockup } from './services/printifyMockupService';
 import { saveProduct, updateProduct as updateHistoryProduct } from './services/historyService';
 import { generateAdfusionBatch } from './services/adfusionService';
-import { generateVideosFromStills } from './services/videoAdService';
+import { generateVideosFromStills, generatePhoneCommercial } from './services/videoAdService';
+import { buildListingContent, type ListingContent } from './services/aiContentService';
+import { publishListing, type PublishResult } from './services/etsyApiService';
 import type { Product } from './types';
 import { PRODUCTS, ANIME_KEYWORDS } from './constants';
+import { IntegrationRoadmap } from './components/IntegrationRoadmap';
+import AdfusionUploader from './components/AdfusionUploader';
 
 type ModalView = 'etsy' | 'checkout' | null;
 type EngineType = 'Standard' | 'Anime';
@@ -37,6 +41,162 @@ const App: React.FC = () => {
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
   const [manualPreviewUrl, setManualPreviewUrl] = useState<string | null>(null);
+  const [perplexityOutput, setPerplexityOutput] = useState<string | null>(null);
+  const [listingContent, setListingContent] = useState<ListingContent | null>(null);
+  const [isGeneratingListingContent, setIsGeneratingListingContent] = useState<boolean>(false);
+  const [listingContentError, setListingContentError] = useState<string | null>(null);
+  const [isPublishingListing, setIsPublishingListing] = useState<boolean>(false);
+  const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
+  const [publishStatusMessage, setPublishStatusMessage] = useState<string | null>(null);
+  const [adfusionVideos, setAdfusionVideos] = useState<string[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<'auto' | AIProvider>(() => {
+    try {
+      const envDefault = (import.meta as any).env?.VITE_DEFAULT_AI_PROVIDER as AIProvider | undefined;
+      return envDefault || 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+
+  const providerCapabilities = useMemo(() => {
+    try {
+      const env = (import.meta as any).env || {};
+      return {
+        hasOpenAI: Boolean(env.VITE_OPENAI_API_KEY),
+        hasMidjourney: Boolean(env.VITE_MIDJOURNEY_API_KEY),
+        hasGemini: Boolean(env.VITE_GEMINI_API_KEY || env.API_KEY),
+        hasGrok: Boolean(env.VITE_GROK_API_KEY),
+        hasPerplexity: Boolean(env.VITE_PERPLEXITY_API_KEY),
+      };
+    } catch {
+      return { hasOpenAI: false, hasMidjourney: false, hasGemini: false, hasGrok: false, hasPerplexity: false };
+    }
+  }, []);
+
+  const { hasOpenAI, hasMidjourney, hasGemini, hasGrok, hasPerplexity } = providerCapabilities;
+
+  const handleInspirationSelected = useCallback((_: string) => {
+    if (hasMidjourney) {
+      setSelectedProvider('midjourney');
+    }
+  }, [hasMidjourney]);
+  useEffect(() => {
+    if (selectedProvider === 'auto') return;
+    const availabilityMap: Record<AIProvider, boolean> = {
+      openai: hasOpenAI,
+      midjourney: hasMidjourney,
+      grok: hasGrok,
+      gemini: hasGemini,
+      perplexity: hasPerplexity,
+    };
+    if (!availabilityMap[selectedProvider]) {
+      setSelectedProvider('auto');
+    }
+  }, [selectedProvider, hasOpenAI, hasMidjourney, hasGemini, hasGrok, hasPerplexity]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!selectedProduct) return;
+    const hasContext = Boolean((prompt && prompt.trim()) || designImage || uploadedImageUrl || merchPreviewUrl);
+    if (!hasContext) {
+      setListingContent(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsGeneratingListingContent(true);
+    setListingContentError(null);
+
+    (async () => {
+      try {
+        const content = await buildListingContent({
+          product: selectedProduct,
+          prompt: prompt?.trim() || selectedProduct.name,
+          mockupUrl: merchPreviewUrl || designImage || uploadedImageUrl || undefined,
+        });
+        if (!cancelled) {
+          setListingContent(content);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : 'Failed to prepare listing content.';
+          setListingContentError(message);
+          setListingContent(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsGeneratingListingContent(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProduct, prompt, merchPreviewUrl, designImage, uploadedImageUrl, isLoading]);
+
+  const providerOptions = useMemo<ProviderOption[]>(() => [
+    {
+      id: 'auto',
+      name: 'Automatic',
+      description: 'Let AutoMerch route your prompt to the best available provider.',
+      icon: '✨',
+      helperText: 'Great default if you are unsure which API to use.',
+    },
+    {
+      id: 'openai',
+      name: 'OpenAI DALL·E 3',
+      description: 'High-quality generation for most designs.',
+      icon: '🎨',
+      disabled: !hasOpenAI,
+      disabledReason: 'Add VITE_OPENAI_API_KEY to enable this option.',
+    },
+    {
+      id: 'midjourney',
+      name: 'Midjourney Niji',
+      description: 'Specialized anime & manga styling.',
+      icon: '🎌',
+      helperText: 'Great for anime prompts when you want full control.',
+      disabled: !hasMidjourney,
+      disabledReason: 'Add VITE_MIDJOURNEY_API_KEY to enable this option.',
+    },
+    {
+      id: 'grok',
+      name: 'Grok',
+      description: 'Alternative provider with OpenAI-compatible API.',
+      icon: '🪐',
+      disabled: !hasGrok,
+      disabledReason: 'Add VITE_GROK_API_KEY to enable this option.',
+    },
+    {
+      id: 'gemini',
+      name: 'Google Gemini',
+      description: 'Reliable fallback option with good quality.',
+      icon: '🤖',
+      disabled: !hasGemini,
+      disabledReason: 'Add VITE_GEMINI_API_KEY to enable this option.',
+    },
+    {
+      id: 'perplexity',
+      name: 'Perplexity Research',
+      description: 'Fetch real anime scene references with timestamps and screenshots.',
+      icon: '📺',
+      helperText: 'Returns JSON data instead of generated art.',
+      disabled: !hasPerplexity,
+      disabledReason: 'Add VITE_PERPLEXITY_API_KEY to enable this option.',
+    },
+  ], [hasOpenAI, hasMidjourney, hasGrok, hasGemini, hasPerplexity]);
+
+  const adfusionIntegrationEnabled = useMemo(() => {
+    try {
+      const flag = (import.meta as any).env?.VITE_ENABLE_ADFUSION_INTEGRATION;
+      if (typeof flag === 'string') {
+        const normalized = flag.trim().toLowerCase();
+        return normalized === '1' || normalized === 'true';
+      }
+    } catch {}
+    return false;
+  }, []);
 
   useEffect(() => {
     const promptLower = prompt.toLowerCase();
@@ -69,23 +229,48 @@ const App: React.FC = () => {
         setMerchPreviewUrl(previewUrl);
       }
       setOverlayUrl(null);
-      // Save to history and generate adfusion mockups
+      // Save to history and generate Adfusion mockups
       try {
-        let adfusionMockups: string[] = [];
-        if (previewUrl) {
-          try { adfusionMockups = await generateAdfusionBatch(previewUrl, selectedProduct.type); } catch {}
+        const adfusionResult = previewUrl
+          ? await generateAdfusionBatch(previewUrl, selectedProduct.type)
+          : null;
+
+        const integrationAssets = adfusionResult
+          ? [...(adfusionResult.stills || []), ...(adfusionResult.videos || [])]
+          : [];
+        if (adfusionResult?.videos?.length) {
+          setAdfusionVideos((prev) => Array.from(new Set([...prev, ...adfusionResult.videos!])));
         }
+
+        const dedupeAssets = (values: string[]): string[] => {
+          const map = new Map<string, string>();
+          values.forEach((value) => {
+            if (!value) return;
+            const key = value.startsWith('data:') ? value.slice(0, 120) : value;
+            if (!map.has(key)) {
+              map.set(key, value);
+            }
+          });
+          return Array.from(map.values());
+        };
+
+        const combinedAssets = dedupeAssets([...integrationAssets, ...adfusionVideos]);
+
         const saved = await saveProduct({
           productId: productId || '',
           productType: selectedProduct.type,
           title: `${selectedProduct.name} - ${prompt || 'Custom Design'}`,
           previewUrl: previewUrl || undefined,
           designUrl: designImage,
-          adfusionMockups,
+          adfusionMockups: combinedAssets,
           blueprint_id: selectedProduct.blueprint_id,
           print_provider_id: selectedProduct.print_provider_id,
         });
-        // Asynchronously add fashion/chic video ads as items 6 & 7 (based on Gemini stills)
+
+        const hasVideoAsset = combinedAssets.some((asset) =>
+          /^data:video\//i.test(asset) || /\.(mp4|webm)(?:\?.*)?$/i.test(asset),
+        );
+
         if (previewUrl && saved?.id) {
           (async () => {
             try {
@@ -93,21 +278,37 @@ const App: React.FC = () => {
                 try {
                   const v = (import.meta as any).env?.VITE_ENABLE_VIDEO_ADS;
                   return v === '1' || String(v).toLowerCase() === 'true';
-                } catch { return false; }
+                } catch {
+                  return false;
+                }
               })();
-              if (enableVideos) {
-                // Guaranteed order: [0] fashion_video_ad, [1] chic_video_ad
-                const fashionStill = adfusionMockups?.[0];
-                const chicStill = adfusionMockups?.[1];
-                const videos = await generateVideosFromStills(fashionStill, chicStill);
+              if (enableVideos && !hasVideoAsset) {
+                let videos: string[] = [];
+                if (selectedProduct.type === 'Phone Case') {
+                  try {
+                    const phoneVideo = await generatePhoneCommercial(previewUrl);
+                    if (phoneVideo) videos = [phoneVideo];
+                  } catch {}
+                } else {
+                  const imageAssets = combinedAssets.filter((asset) =>
+                    !(/^data:video\//i.test(asset) || /\.(mp4|webm)(?:\?.*)?$/i.test(asset)),
+                  );
+                  const fashionStill = imageAssets[0];
+                  const chicStill = imageAssets[1];
+                  videos = await generateVideosFromStills(fashionStill, chicStill);
+                }
                 if (videos.length) {
-                  await updateHistoryProduct(saved.id, { adfusionMockups: [...(adfusionMockups || []), ...videos] });
+                  const updatedAssets = dedupeAssets([...combinedAssets, ...videos]);
+                  await updateHistoryProduct(saved.id, { adfusionMockups: updatedAssets });
+                  setAdfusionVideos((prev) => Array.from(new Set([...prev, ...videos])));
                 }
               }
             } catch {}
           })();
         }
-      } catch (_) {}
+      } catch (integrationError) {
+        console.warn('Adfusion integration failed, falling back to legacy mockups', integrationError);
+      }
     } catch (err) {
       console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
@@ -116,7 +317,7 @@ const App: React.FC = () => {
       setIsLoading(false);
       setLoadingMessage('');
     }
-  }, [designImage, selectedProduct]);
+  }, [adfusionVideos, designImage, prompt, selectedProduct]);
 
 
   const handleGenerateClick = useCallback(async () => {
@@ -130,18 +331,88 @@ const App: React.FC = () => {
     setMerchPreviewUrl(null);
     setManualPreviewUrl(null);
     setAiResult(null);
+    setPerplexityOutput(null);
     setUploadedImageUrl(null);
+    setAdfusionVideos([]);
+    setListingContent(null);
+    setListingContentError(null);
     setLoadingMessage('Generating your unique design...');
 
     try {
       // Try the new AI service first, fallback to Gemini if needed
       try {
-        const envDefault = (import.meta as any).env?.VITE_DEFAULT_AI_PROVIDER as any;
-        const hasGrok = Boolean((import.meta as any).env?.VITE_GROK_API_KEY);
-        const provider = envDefault || (hasGrok ? 'grok' : 'openai');
+        const provider = selectedProvider === 'auto' ? undefined : selectedProvider;
         const result = await generateAIImage({ prompt, provider, size: '1024x1024', quality: 'hd', style: 'vivid' });
         setAiResult(result);
-        setDesignImage(result.imageUrl);
+        if (result.provider === 'perplexity') {
+          const raw = result.data || '[]';
+          setPerplexityOutput(raw);
+          try {
+            type PerplexityScene = {
+              anime_title?: string;
+              scene_name?: string;
+              description?: string;
+              screenshot?: string;
+              screenshot_source?: string;
+              video_url?: string;
+              timestamp?: string;
+              manual_review?: boolean;
+            };
+            const scenes = JSON.parse(raw) as PerplexityScene[];
+            const trustedHosts = ['crunchyroll.com','www.crunchyroll.com','funimation.com','www.funimation.com','hulu.com','www.hulu.com','netflix.com','www.netflix.com','disneyplus.com','www.disneyplus.com','primevideo.com','www.primevideo.com','amazon.com','www.amazon.com','toei-animation.com','www.toei-animation.com','aniplex.co.jp','www.aniplex.co.jp','aniplex.jp','viz.com','www.viz.com','fandom.com','www.fandom.com','hero.wikia.com','static.wikia.nocookie.net','myanimelist.net','wallpaperaccess.com','wallpapercave.com','anime-pictures.net','imgur.com','i.imgur.com','youtube.com','www.youtube.com','m.youtube.com','youtu.be'];
+
+            const fallback = scenes.find((scene) => {
+              if (typeof scene?.screenshot !== 'string') return false;
+              const value = scene.screenshot.trim();
+              if (value.startsWith('data:image/')) return true;
+              const source = typeof scene?.screenshot_source === 'string' ? scene.screenshot_source : scene?.video_url;
+              if (!source) return false;
+              try {
+                const { hostname } = new URL(source);
+                return trustedHosts.includes(hostname.toLowerCase());
+              } catch {
+                return false;
+              }
+            });
+
+            if (fallback?.screenshot) {
+              setDesignImage(fallback.screenshot);
+            } else {
+              const searchTarget = scenes.find((scene) => !scene.manual_review);
+              if (searchTarget) {
+                try {
+                  setLoadingMessage('Searching reference still...');
+                  const queryParts = [
+                    searchTarget.anime_title,
+                    searchTarget.scene_name,
+                    searchTarget.description,
+                  ].filter(Boolean);
+                  const resp = await fetch('/api/image-search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: queryParts.join(' ') }),
+                  });
+                  if (!resp.ok) throw new Error(`image search failed (${resp.status})`);
+                  const payload = await resp.json();
+                  const first = Array.isArray(payload?.results) ? payload.results.find((r) => typeof r?.url === 'string') : null;
+                  setDesignImage(first?.url || null);
+                } catch (searchErr) {
+                  console.warn('Image search fallback failed', searchErr);
+                  setDesignImage(null);
+                } finally {
+                  setLoadingMessage('');
+                }
+              } else {
+                setDesignImage(null);
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to parse Perplexity JSON for preview', err);
+            setDesignImage(null);
+          }
+        } else {
+          setDesignImage(result.imageUrl);
+        }
         setLoadingMessage('');
       } catch (aiError) {
         console.warn('AI service failed, falling back to Gemini:', aiError);
@@ -157,7 +428,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [prompt]);
+  }, [prompt, detectedEngine, selectedProvider]);
 
   const handleDownload = () => {
     const src = manualPreviewUrl || merchPreviewUrl || designImage;
@@ -171,6 +442,72 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const handlePerplexityDownload = useCallback(() => {
+    if (!perplexityOutput) return;
+    const blob = new Blob([perplexityOutput], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'perplexity-anime-scenes.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [perplexityOutput]);
+
+  const handlePerplexityCopy = useCallback(async () => {
+    if (!perplexityOutput || !navigator?.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(perplexityOutput);
+    } catch (err) {
+      console.warn('Failed to copy Perplexity output', err);
+    }
+  }, [perplexityOutput]);
+
+  const handleAdfusionVideosImported = useCallback((videos: string[]) => {
+    if (!Array.isArray(videos) || !videos.length) return;
+    setAdfusionVideos((prev) => Array.from(new Set([...prev, ...videos])));
+    console.log('Imported Adfusion videos:', videos);
+  }, []);
+
+  const handlePublishToEtsy = useCallback(async () => {
+    if (!listingContent) {
+      setPublishStatusMessage('Listing content is still preparing. Try again in a moment.');
+      return;
+    }
+    if (!merchPreviewUrl) {
+      setPublishStatusMessage('Generate a product mockup before publishing to Etsy.');
+      return;
+    }
+
+    setIsPublishingListing(true);
+    setPublishStatusMessage(null);
+
+    try {
+      const result = await publishListing({
+        title: listingContent.title,
+        description: listingContent.description,
+        tags: listingContent.tags,
+        product: selectedProduct,
+        previewUrl: merchPreviewUrl,
+        designUrl: designImage || uploadedImageUrl,
+        price: selectedProduct.price,
+        quantity,
+      });
+      setPublishResult(result);
+      const message = result.source === 'etsy'
+        ? `Listing published to Etsy (ID: ${result.listingId}).`
+        : 'Simulated Etsy draft created. Connect Etsy API credentials to auto-publish.';
+      setPublishStatusMessage(message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to publish listing to Etsy.';
+      setPublishStatusMessage(message);
+      console.error('Publish to Etsy failed', err);
+    } finally {
+      setIsPublishingListing(false);
+    }
+  }, [listingContent, merchPreviewUrl, selectedProduct, designImage, uploadedImageUrl, quantity]);
+
   const handleImageUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
@@ -182,6 +519,10 @@ const App: React.FC = () => {
       setError(null);
       setPrompt('');
       setAiResult(null);
+      setPerplexityOutput(null);
+      setAdfusionVideos([]);
+      setListingContent(null);
+      setListingContentError(null);
       setLoadingMessage("Uploading and processing image...");
 
       try {
@@ -208,6 +549,9 @@ const App: React.FC = () => {
     setIsModalOpen(true);
     if(view === 'checkout') {
       setQuantity(1);
+    } else if (view === 'etsy') {
+      setPublishStatusMessage(null);
+      setPublishResult(null);
     }
   };
 
@@ -220,25 +564,60 @@ const App: React.FC = () => {
     if (!merchPreviewUrl) return null;
 
     if (modalView === 'etsy') {
+      const title = listingContent?.title || `${selectedProduct.name} - ${prompt || 'Custom Design'}`;
+      const description = listingContent?.description || `High-quality ${selectedProduct.type} featuring a unique AI-generated design.`;
+      const tags = listingContent?.tags || [];
       return (
         <div>
           <img src={merchPreviewUrl} alt="Product Preview" className="rounded-lg mb-4 max-h-64 mx-auto"/>
           <h3 className="text-xl font-bold mb-4">Publish to Etsy</h3>
+          {isGeneratingListingContent && (
+            <div className="mb-3 text-sm text-white/70">Generating SEO-optimized listing content...</div>
+          )}
+          {listingContentError && (
+            <div className="mb-3 text-sm text-red-300">{listingContentError}</div>
+          )}
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-300">Listing Title</label>
-              <input type="text" disabled className="w-full bg-gray-700/50 rounded-md p-2 mt-1" value={`${selectedProduct.name} - ${prompt || 'Custom Design'}`} />
+              <input type="text" disabled className="w-full bg-gray-700/50 rounded-md p-2 mt-1" value={title} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300">Description</label>
-              <textarea disabled className="w-full bg-gray-700/50 rounded-md p-2 mt-1 h-24" value={`High-quality ${selectedProduct.type} featuring a unique AI-generated design.`}></textarea>
+              <textarea disabled className="w-full bg-gray-700/50 rounded-md p-2 mt-1 h-32" value={description}></textarea>
             </div>
              <div>
               <label className="block text-sm font-medium text-gray-300">Price ($)</label>
               <input type="number" disabled className="w-full bg-gray-700/50 rounded-md p-2 mt-1" value={selectedProduct.price} />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300">Tags</label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {tags.length ? (
+                  tags.map(tag => (
+                    <span key={tag} className="text-xs bg-white/10 px-2 py-1 rounded-full border border-white/20">{tag}</span>
+                  ))
+                ) : (
+                  <span className="text-xs text-white/60">Tags will appear once content is ready.</span>
+                )}
+              </div>
+            </div>
           </div>
-          <button onClick={() => {alert('Published to Etsy! (Simulation)'); closeModal();}} className="w-full mt-6 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-lg transition-all">Confirm & Publish</button>
+          {publishStatusMessage && (
+            <div className={`mt-4 text-sm ${publishStatusMessage.toLowerCase().includes('fail') ? 'text-red-300' : 'text-emerald-200'}`}>
+              {publishStatusMessage}
+              {publishResult?.url && (
+                <div className="mt-1"><a href={publishResult.url} target="_blank" rel="noreferrer" className="underline">View listing</a></div>
+              )}
+            </div>
+          )}
+          <button
+            onClick={handlePublishToEtsy}
+            disabled={isPublishingListing || isGeneratingListingContent}
+            className={`w-full mt-6 text-white font-bold py-3 px-4 rounded-lg transition-all ${isPublishingListing || isGeneratingListingContent ? 'bg-orange-500/60 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'}`}
+          >
+            {isPublishingListing ? 'Publishing…' : 'Confirm & Publish'}
+          </button>
         </div>
       );
     }
@@ -288,10 +667,43 @@ const App: React.FC = () => {
                 isLoading={isLoading}
                 onImageUpload={handleImageUpload}
                 engine={detectedEngine}
+                onInspirationSelected={handleInspirationSelected}
               />
-              {aiResult && (
-                <AIProviderInfo result={aiResult} detectedEngine={detectedEngine} />
+              {perplexityOutput && (
+                <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 shadow-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <h3 className="text-lg font-semibold text-white">Perplexity Anime Scene Dataset</h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handlePerplexityCopy}
+                        className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-xs transition"
+                      >
+                        Copy JSON
+                      </button>
+                      <button
+                        onClick={handlePerplexityDownload}
+                        className="px-3 py-1 rounded-full bg-pink-500/80 hover:bg-pink-500 text-xs transition"
+                      >
+                        Download JSON
+                      </button>
+                    </div>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-3 max-h-72 overflow-auto text-left text-xs font-mono whitespace-pre-wrap">
+                    {perplexityOutput}
+                  </div>
+                  <p className="text-xs text-white/70">
+                    This response lists verified streaming links, timestamps, and screenshot references for the top 100 anime action scenes.
+                  </p>
+                </div>
               )}
+              <AIProviderSelector
+                options={providerOptions}
+                selected={selectedProvider}
+                onSelect={setSelectedProvider}
+                isLoading={isLoading}
+                lastResult={aiResult}
+                detectedEngine={detectedEngine}
+              />
               <ProductSelector
                 products={PRODUCTS}
                 selectedProduct={selectedProduct}
@@ -352,8 +764,19 @@ const App: React.FC = () => {
                   onCheckout={() => openModal('checkout')}
                 />
               )}
+              {adfusionIntegrationEnabled && (
+                <div className="mt-6">
+                  <AdfusionUploader
+                    designImage={designImage || merchPreviewUrl}
+                    onVideosImported={handleAdfusionVideosImported}
+                  />
+                </div>
+              )}
             </div>
           </main>
+        </div>
+        <div className="container mx-auto max-w-6xl mt-10">
+          <IntegrationRoadmap />
         </div>
       </div>
       <Modal isOpen={isModalOpen} onClose={closeModal}>

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { INSPIRATION_PROMPTS } from '../constants';
+import { INSPIRATION_PROMPTS, DAILY_PROMPT_COUNT } from '../constants';
 
 interface PromptInputProps {
   prompt: string;
@@ -8,15 +8,21 @@ interface PromptInputProps {
   isLoading: boolean;
   onImageUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   engine: 'Standard' | 'Anime';
+  onInspirationSelected?: (prompt: string) => void;
 }
 
-export const PromptInput: React.FC<PromptInputProps> = ({ prompt, setPrompt, onGenerate, isLoading, onImageUpload, engine }) => {
+export const PromptInput: React.FC<PromptInputProps> = ({ prompt, setPrompt, onGenerate, isLoading, onImageUpload, engine, onInspirationSelected }) => {
   const [currentInspirations, setCurrentInspirations] = useState<string[]>([]);
 
   const getRandomInspirations = useCallback(() => {
     const shuffled = [...INSPIRATION_PROMPTS].sort(() => 0.5 - Math.random());
-    setCurrentInspirations(shuffled.slice(0, 10));
+    setCurrentInspirations(shuffled.slice(0, DAILY_PROMPT_COUNT));
   }, []);
+
+  const handleInspirationClick = useCallback((value: string) => {
+    setPrompt(value);
+    onInspirationSelected?.(value);
+  }, [setPrompt, onInspirationSelected]);
 
   React.useEffect(() => {
     getRandomInspirations();
@@ -54,7 +60,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({ prompt, setPrompt, onG
             {currentInspirations.map((p, i) => (
                 <button
                     key={i}
-                    onClick={() => setPrompt(p)}
+                    onClick={() => handleInspirationClick(p)}
                     className="bg-white/10 hover:bg-white/20 text-xs px-3 py-1 rounded-full transition"
                     disabled={isLoading}
                 >

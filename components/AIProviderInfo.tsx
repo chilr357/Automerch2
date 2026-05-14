@@ -32,6 +32,13 @@ export const AIProviderInfo: React.FC<AIProviderInfoProps> = ({ result, detected
           description: 'Reliable fallback provider',
           color: 'text-blue-400',
         };
+      case 'perplexity':
+        return {
+          name: 'Perplexity Research',
+          icon: '📺',
+          description: 'Delivers real-scene references with timestamps and screenshots',
+          color: 'text-amber-300',
+        };
       default:
         return {
           name: 'Unknown',
